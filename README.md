@@ -1,6 +1,6 @@
 # Farm React
 
-Farm React is a farm management web app.
+Stelleros is a farm management web app.
 
 It lets users:
 
@@ -8,6 +8,51 @@ It lets users:
 - display fields on a map,
 - track GPS positions/history of machines,
 - track inventory of plant protection products and interventions
+
+## Run with Docker
+
+The Docker image serves the built React client and the Express server from the
+same container. Docker must be installed and running.
+
+### 1. Configure the environment
+
+Create the server environment file and fill in the required values described
+below:
+
+```powershell
+Copy-Item server/.env.example server/.env
+```
+
+The `server/.env` file is not copied into the image. It is passed to the
+container at runtime, so keep it out of version control.
+
+### 2. Build the client and the image
+
+The Dockerfile expects `client/dist` to exist before the image is built:
+
+```powershell
+npm install --prefix client
+npm --prefix client run build
+docker build -t farm-react .
+```
+
+### 3. Start the container
+
+The application listens on port `3000` in this example:
+
+```powershell
+docker run --rm --name farm-react `
+  --env-file server/.env `
+  -e NODE_ENV=production `
+  -e PORT=3000 `
+  -p 3000:3000 `
+  farm-react
+```
+
+Open <http://localhost:3000>. To stop the container, press `Ctrl+C`.
+
+After changing frontend code, run the client build and `docker build` again so
+the updated `client/dist` is included in the image.
 
 ## Getting Started / Implementation
 
@@ -115,10 +160,9 @@ GPS data is sent by the **gps-sender** repository to this project's endpoint:
 - `POST /api/location`
 
 ## View
+
 Actually the website looks like that :
 <img width="1908" height="489" alt="image" src="https://github.com/user-attachments/assets/b579194b-b468-492b-8556-e6131bd391e8" />
 <img width="1917" height="804" alt="image" src="https://github.com/user-attachments/assets/43901f6b-944d-46f5-afe6-3664ffda4713" />
 <img width="1914" height="860" alt="image" src="https://github.com/user-attachments/assets/45bab89c-316a-4fd2-8896-e98b27ad9f19" />
 <img width="1909" height="416" alt="image" src="https://github.com/user-attachments/assets/a8107804-f02e-479a-b7c1-f2ee4eb80915" />
-
-

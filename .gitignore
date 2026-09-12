@@ -8,7 +8,8 @@ node_modules/
 
 # Build client React
 client/dist/
-
+client/client/node_modules/
+client/client/pacjage-lock.json
 # Logs
 *.log
 npm-debug.log*
@@ -23,6 +24,9 @@ Thumbs.db
 .idea/
 
 server/modules/mapModule.js
-Dockerfile
 package-lock.json
-.dockerignore
+
+
+# Données GPS runtime (coordonnées réelles des appareils)
+latest_positions.json
+location_history.json
