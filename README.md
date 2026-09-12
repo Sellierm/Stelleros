@@ -1,6 +1,6 @@
-# Farm React
+# Stelleros
 
-Farm React is a farm management web app.
+Stelleros is a farm management web app.
 
 It lets users:
 
