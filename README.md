@@ -1,4 +1,4 @@
-# Farm React
+# Stelleros
 
 Stelleros is a farm management web app.
 
