@@ -18,7 +18,7 @@
     "express-rate-limit": "^7.5.0",
     "express-session": "^1.17.3",
     "helmet": "^8.0.0",
-    "mysql2": "^3.0.1",
+    "mysql2": "^3.23.1",
     "node-fetch": "^2.6.8",
     "socket.io": "^4.5.1",
     "validator": "^13.7.0"
