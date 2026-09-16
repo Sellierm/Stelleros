@@ -14,21 +14,24 @@
   display: flex;
   margin: auto;
   height: 100%;
-  width: 70%;
+  width: 63%;
   border: thin solid #333;
   float: left;
 }
 
 #infoPanel {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  width: 15%;
+  width: 22%;
   height: 100%;
   float: left;
+  padding-left: 10px;
 }
 
 #capture,
 #newCapture,
+#coverageCalc,
 #gpsDevices {
   width: 100%;
 }
@@ -38,11 +41,16 @@
 }
 
 #newCapture {
+  height: 15%;
+}
+
+#coverageCalc {
   height: 20%;
+  overflow-y: auto;
 }
 
 #gpsDevices {
-  height: 45%;
+  height: 30%;
   overflow-y: auto;
 }
 
@@ -52,6 +60,31 @@
 
 #newCapture h2 {
   border-top: solid #333;
+}
+
+#coverageCalc h2 {
+  border-top: solid #333;
+}
+
+.coverage-device-row {
+  justify-content: space-between;
+}
+
+.coverage-device-row input {
+  width: 60px;
+}
+
+.coverage-muted {
+  color: #8a8a8a;
+}
+
+.coverage-error {
+  color: #c62828;
+}
+
+.coverage-warning {
+  color: #e65100;
+  font-size: 12px;
 }
 
 #deviceButtons {
@@ -85,7 +118,7 @@
 #mapCap h2 {
   font-family: "Montserrat", sans-serif;
   font-weight: 500;
-  font-size: 32px;
+  font-size: 20px;
   text-align: center;
   border-bottom: solid #333;
   margin: 0 0 2% 0;
@@ -98,6 +131,33 @@
 #legend .lin p {
   margin: auto 0;
   padding-left: 5%;
+}
+
+#infoPanel .lin {
+  width: calc(100% - 16px);
+  min-height: 28px;
+  height: auto;
+  margin: 0 8px 6px 8px;
+  gap: 8px;
+}
+
+#infoPanel .lin p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+#infoPanel label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+#infoPanel input {
+  box-sizing: border-box;
+  flex: 0 0 60px;
+}
+
+#infoPanel button {
+  max-width: 100%;
 }
 
 .lin {
@@ -243,10 +303,12 @@
     width: 100%;
     height: auto;
     flex-direction: column;
+    padding-left: 0;
   }
 
   #capture,
   #newCapture,
+  #coverageCalc,
   #gpsDevices {
     width: 100%;
     height: auto;
@@ -267,6 +329,12 @@
   #newCapture {
     padding: 6px 10px;
     box-sizing: border-box;
+  }
+
+  #coverageCalc {
+    padding: 6px 10px;
+    box-sizing: border-box;
+    overflow-y: visible;
   }
 
   #gpsDevices {

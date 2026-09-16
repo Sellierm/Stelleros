@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Nav from "../components/Nav.jsx";
 import { useSocket } from "../contexts/SocketContext.jsx";
 import usePageMeta from "../hooks/usePageMeta.js";
+import { computeCoverageArea } from "../utils/coverageCalculator.js";
 import "./FieldsPage.css";
 
 const CROP_COLORS = {
@@ -58,6 +59,11 @@ export default function FieldsPage() {
   const [selectedCrop, setSelectedCrop] = useState(null);
   const [gpsPositions, setGpsPositions] = useState({});
   const [showPdtInfo, setShowPdtInfo] = useState(false);
+  const [implementWidths, setImplementWidths] = useState({});
+  const [availableTrackDevices, setAvailableTrackDevices] = useState([]);
+  const [coverageResult, setCoverageResult] = useState(null);
+  const [coverageError, setCoverageError] = useState("");
+  const [calculatingCoverage, setCalculatingCoverage] = useState(false);
 
   const mapInstanceRef = useRef(null);
   const gpsMarkersRef = useRef([]);
@@ -69,6 +75,8 @@ export default function FieldsPage() {
   const activeInfoWindowRef = useRef(null);
   const markerByDeviceRef = useRef({});
   const infoWindowByDeviceRef = useRef({});
+  const fieldPolygonsRef = useRef([]);
+  const trackPointsByDeviceRef = useRef({});
 
   usePageMeta("Fields", "/assets/icons8-champ-32.png");
 
@@ -175,6 +183,8 @@ export default function FieldsPage() {
   const changeDate = (date) => {
     setSelectedDate(date);
     selectedDateRef.current = date;
+    setCoverageResult(null);
+    setCoverageError("");
     if (mapInstanceRef.current)
       loadPositionHistory(mapInstanceRef.current, date);
   };
@@ -233,6 +243,7 @@ export default function FieldsPage() {
       polylinesMapRef.current = {};
 
       const historyByDevice = data.positions || {};
+      trackPointsByDeviceRef.current = {};
 
       gpsMarkersRef.current.forEach((marker) => marker.setMap(null));
       gpsMarkersRef.current = [];
@@ -255,6 +266,7 @@ export default function FieldsPage() {
           );
 
         if (path.length < 1) continue;
+        trackPointsByDeviceRef.current[deviceId] = path;
 
         const lastPoint = rawSeries[rawSeries.length - 1];
         const lastPosition = {
@@ -282,6 +294,7 @@ export default function FieldsPage() {
         polylinesMapRef.current[deviceId] = polyline;
         gpsPolylinesRef.current.push(polyline);
       }
+      setAvailableTrackDevices(Object.keys(trackPointsByDeviceRef.current));
       setGpsPositions((previous) => ({ ...previous, ...historicalPositions }));
     } catch (err) {
       console.error("Error loading GPS history:", err);
@@ -493,6 +506,7 @@ export default function FieldsPage() {
 
               let total = 0;
               let cTotals = {};
+              const fieldPolygons = [];
 
               for (let i = 0; i < placemarks.length; i++) {
                 let surface = 0;
@@ -522,12 +536,35 @@ export default function FieldsPage() {
                   if (mC) cultureStr = mC[1].trim();
                 }
 
+                const polygonNodes =
+                  placemarks[i].getElementsByTagName("Polygon");
+                for (let p = 0; p < polygonNodes.length; p++) {
+                  const coordinatesNode =
+                    polygonNodes[p].getElementsByTagName("coordinates")[0];
+                  if (!coordinatesNode) continue;
+
+                  const points = coordinatesNode.textContent
+                    .trim()
+                    .split(/\s+/)
+                    .map((tuple) => {
+                      const [lng, lat] = tuple.split(",").map(Number);
+                      return { lat, lng };
+                    })
+                    .filter(
+                      (point) =>
+                        Number.isFinite(point.lat) &&
+                        Number.isFinite(point.lng),
+                    );
+                  if (points.length >= 3) fieldPolygons.push(points);
+                }
+
                 const cultureName = normalizeCultureName(cultureStr);
                 cTotals[cultureName] = (cTotals[cultureName] || 0) + surface;
                 total += surface;
               }
               setTotalHa(total.toFixed(2));
               setCropTotals(cTotals);
+              fieldPolygonsRef.current = fieldPolygons;
             });
         },
       );
@@ -593,6 +630,43 @@ export default function FieldsPage() {
   const formatSpeed = (pos) => {
     if (pos.speed == null) return null;
     return `${(pos.speed * 3.6).toFixed(1)} km/h`;
+  };
+
+  const getImplementWidth = (deviceId) => implementWidths[deviceId] ?? 3;
+
+  const setDeviceWidth = (deviceId, value) => {
+    setImplementWidths((previous) => ({ ...previous, [deviceId]: value }));
+  };
+
+  const calculateCoverage = () => {
+    setCoverageError("");
+    setCoverageResult(null);
+
+    if (!fieldPolygonsRef.current.length) {
+      setCoverageError("Aucun contour de champ chargé pour cette année");
+      return;
+    }
+    if (!availableTrackDevices.length) {
+      setCoverageError("Aucune trace GPS disponible pour cette date");
+      return;
+    }
+
+    const tracksWithWidth = availableTrackDevices.map((deviceId) => ({
+      deviceId,
+      points: trackPointsByDeviceRef.current[deviceId],
+      widthM: getImplementWidth(deviceId),
+    }));
+
+    setCalculatingCoverage(true);
+    try {
+      setCoverageResult(
+        computeCoverageArea(fieldPolygonsRef.current, tracksWithWidth),
+      );
+    } catch (error) {
+      setCoverageError(error.message || "Erreur de calcul");
+    } finally {
+      setCalculatingCoverage(false);
+    }
   };
 
   return (
@@ -665,6 +739,61 @@ export default function FieldsPage() {
                     ? cropTotals[selectedCrop].toFixed(2)
                     : "0.00"}
                 </p>
+              </div>
+            )}
+          </div>
+          <div id="coverageCalc">
+            <h2>Surface couverte</h2>
+            {availableTrackDevices.length === 0 ? (
+              <div className="lin">
+                <p className="coverage-muted">Aucune trace pour cette date</p>
+              </div>
+            ) : (
+              availableTrackDevices.map((deviceId) => (
+                <div className="lin coverage-device-row" key={deviceId}>
+                  <label htmlFor={`width-${deviceId}`}>
+                    Largeur {deviceId} (m)
+                  </label>
+                  <input
+                    id={`width-${deviceId}`}
+                    type="number"
+                    min="0.1"
+                    max="30"
+                    step="0.1"
+                    value={getImplementWidth(deviceId)}
+                    onChange={(event) =>
+                      setDeviceWidth(deviceId, event.target.value)
+                    }
+                  />
+                </div>
+              ))
+            )}
+            <div className="lin">
+              <button
+                className="pp-btn pp-btn-primary"
+                onClick={calculateCoverage}
+                disabled={
+                  calculatingCoverage || availableTrackDevices.length === 0
+                }
+              >
+                {calculatingCoverage ? "Calcul..." : "Calculer"}
+              </button>
+            </div>
+            {coverageError && (
+              <div className="lin">
+                <p className="coverage-error">{coverageError}</p>
+              </div>
+            )}
+            {coverageResult?.warnings?.length > 0 && (
+              <div className="lin">
+                <p className="coverage-warning">
+                  {coverageResult.warnings.join(" · ")}
+                </p>
+              </div>
+            )}
+            {coverageResult && (
+              <div className="lin">
+                <p>{coverageResult.totalAreaHa.toFixed(2)} Ha couverts</p>
               </div>
             )}
           </div>
