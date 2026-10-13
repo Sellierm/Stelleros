@@ -37,11 +37,11 @@
 }
 
 #capture {
-  height: 35%;
+  height: 30%;
 }
 
 #newCapture {
-  height: 15%;
+  height: 25%;
 }
 
 #coverageCalc {
@@ -174,6 +174,11 @@
   width: 25%;
   float: left;
   outline: 0.1rem solid rgba(0, 0, 0, 1);
+}
+
+/* Keep crop colors unchanged when the dark theme inverts the page. */
+html.dark-theme #legend .lin > div {
+  filter: invert(1) hue-rotate(180deg);
 }
 
 .fields-filters {
