@@ -2,6 +2,7 @@ const express = require("express");
 const http = require("http");
 const path = require("path");
 const fs = require("fs");
+const rateLimit = require("express-rate-limit");
 const {
   IS_PROD,
   PORT,
@@ -35,6 +36,12 @@ if (fs.existsSync(distPath)) {
 //Socket.IO
 const io = initSocket(server);
 
+const spaFallbackLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // max 100 requests per IP per window
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 //Routes
 
 //Config
@@ -63,7 +70,7 @@ app.use(createGpsRoutes(io));
 app.use(phytoRouter);
 
 //SPA fallback
-app.get("*", (req, res) => {
+app.get("*", spaFallbackLimiter, (req, res) => {
   const indexPath = path.join(__dirname, "../client/dist", "index.html");
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);

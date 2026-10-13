@@ -1,8 +1,19 @@
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 const { pool } = require("../config");
 const { authMiddleware } = require("../middleware");
 
 const router = express.Router();
+
+const phytoLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: "Too many requests from this IP, please try again later.",
+});
+
+router.use(phytoLimiter);
 
 //Phyto — Produits
 

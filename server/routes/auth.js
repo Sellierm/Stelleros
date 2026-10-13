@@ -72,11 +72,58 @@ router.post("/api/auth", authLimiter, async (req, res) => {
     if (isBcrypt) {
       passwordValid = await bcrypt.compare(password, storedHash);
     } else {
-      const legacyHash = crypto
-        .createHash("sha512")
+      const legacyParts =
+        typeof storedHash === "string" ? storedHash.split("$") : [];
+      const isPbkdf2Legacy =
+        legacyParts.length === 4 && legacyParts[0] === "pbkdf2";
+      if (isPbkdf2Legacy) {
+        const iterations = Number.parseInt(legacyParts[1], 10);
+        const saltHex = legacyParts[2];
+        const expectedHashHex = legacyParts[3];
+        if (
+          Number.isInteger(iterations) &&
+          iterations >= 100000 &&
+          iterations <= 10000000 &&
+          /^[0-9a-f]+$/i.test(saltHex) &&
+          saltHex.length % 2 === 0 &&
+          /^[0-9a-f]+$/i.test(expectedHashHex) &&
+          expectedHashHex.length % 2 === 0
+        ) {
+          const derivedKey = crypto.pbkdf2Sync(
+            password,
+            Buffer.from(saltHex, "hex"),
+            iterations,
+            expectedHashHex.length / 2,
+            "sha512",
+          );
+          const expectedKey = Buffer.from(expectedHashHex, "hex");
+          if (
+            derivedKey.length === expectedKey.length &&
+            crypto.timingSafeEqual(derivedKey, expectedKey)
+          ) {
+            passwordValid = true;
+            try {
+              const newHash = await bcrypt.hash(password, 12);
+              await pool.execute("UPDATE user SET password=? WHERE name=?", [
+                newHash,
+                username,
+              ]);
+              authLog(
+                clientIp,
+                "INFO",
+                `Mot de passe migré bcrypt : "${username}"`,
+              );
+            } catch (hashErr) {
+              console.error("bcrypt hash error:", hashErr);
+            }
+          }
+        }
+      }
+      /*
+        legacy SHA-512 routine intentionally disabled
         .update(password)
         .digest("hex");
-      if (legacyHash === storedHash) {
+      disabled legacy comparison
         passwordValid = true;
         try {
           const newHash = await bcrypt.hash(password, 12);
@@ -93,6 +140,9 @@ router.post("/api/auth", authLimiter, async (req, res) => {
           console.error("bcrypt hash error:", hashErr);
         }
       }
+    }
+
+      */
     }
 
     if (!passwordValid) {

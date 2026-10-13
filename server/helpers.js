@@ -74,7 +74,7 @@ const fetchSencropData = async (url) => {
     }
 
     if (!r.ok) {
-      console.error("[Sencrop] Erreur HTTP", r.status, url);
+      console.error("[Sencrop] Erreur HTTP", r.status);
       return { success: false };
     }
 

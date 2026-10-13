@@ -21,8 +21,8 @@ const YEARS = [2022, 2023, 2024, 2025, 2026, 2027];
 const normalizeCultureName = (str) => {
   if (!str) return "N/A";
   str = str.toLowerCase();
-  // Strip HTML tags if any slipped through
-  str = str.replace(/<[^>]+>/g, "");
+  // Remove angle brackets if any HTML slipped through
+  str = str.replace(/[<>]/g, "");
 
   if (str.includes("pdt")) return "Pdt";
   if (str.includes("bl")) return "Blé";
