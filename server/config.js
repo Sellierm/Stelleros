@@ -1,12 +1,11 @@
 require("dotenv").config({ path: `${__dirname}/.env` });
 
 const mysql = require("mysql2/promise");
-const crypto = require("crypto");
 const helmet = require("helmet");
 const cors = require("cors");
-const session = require("express-session");
 const express = require("express");
 const cookieParser = require("cookie-parser");
+const { authHandler } = require("./lib/authBridge");
 
 const bd = require("./modules/bdModule");
 
@@ -32,12 +31,6 @@ const GPS_ALLOWED_IDS = (process.env.GPS_ALLOWED_IDS || "6290,7724")
   .map((v) => v.trim())
   .filter(Boolean);
 
-const sessionSecret =
-  process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex");
-if (!process.env.SESSION_SECRET) {
-  console.warn("[WARN] SESSION_SECRET manquant. Secret temporaire généré.");
-}
-
 //Pool MySQL
 const pool = mysql.createPool({
   host: bd.host,
@@ -46,21 +39,6 @@ const pool = mysql.createPool({
   database: bd.database,
   waitForConnections: true,
   connectionLimit: 10,
-});
-
-//Session middleware
-const sessionMiddleware = session({
-  name: "sid",
-  secret: sessionSecret,
-  resave: false,
-  saveUninitialized: false,
-  rolling: true,
-  cookie: {
-    maxAge: 2 * 60 * 60 * 1000,
-    secure: IS_PROD,
-    sameSite: IS_PROD ? "strict" : "lax",
-    httpOnly: true,
-  },
 });
 
 //Vérification origine CORS
@@ -145,9 +123,9 @@ function configureApp(app) {
   });
 
   app.use(cookieParser());
+  app.all("/api/auth/*", authHandler);
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
-  app.use(sessionMiddleware);
 }
 
 module.exports = {
@@ -158,9 +136,7 @@ module.exports = {
   CORS_ALLOWED_SUFFIX,
   GPS_INGEST_KEY,
   GPS_ALLOWED_IDS,
-  sessionSecret,
   pool,
-  sessionMiddleware,
   isOriginAllowed,
   configureApp,
 };

@@ -8,13 +8,11 @@ const {
   PORT,
   HOST,
   configureApp,
-  sessionMiddleware,
 } = require("./config");
 const { authMiddleware, csrfProtection } = require("./middleware");
 const { fetchForecastData } = require("./helpers");
 const { initSocket } = require("./socket");
 
-const authRouter = require("./routes/auth");
 const createGpsRoutes = require("./routes/gps");
 const phytoRouter = require("./routes/phyto");
 
@@ -59,9 +57,6 @@ app.get("/api/forecast", authMiddleware, async (req, res) => {
     res.status(500).json({ error: "Error fetching forecast data" });
   }
 });
-
-//Auth
-app.use(authRouter);
 
 //GPS
 app.use(createGpsRoutes(io));
