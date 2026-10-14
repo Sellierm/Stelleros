@@ -1,12 +1,12 @@
 const require_socket_io = require("socket.io");
 const crypto = require("crypto");
 const {
-  sessionMiddleware,
   isOriginAllowed,
   GPS_INGEST_KEY,
   GPS_ALLOWED_IDS,
 } = require("./config");
 const { authLog } = require("./middleware");
+const { getSession } = require("./lib/authBridge");
 const { fetchSencropData } = require("./helpers");
 const { buildLocationPoint, ingestLocationPoint } = require("./locationStore");
 const map = require("./modules/mapModule");
@@ -32,7 +32,6 @@ function initSocket(server) {
   //  - Clients web (React) : authentifies par la session cookie existante,
   //    comportement inchange.
   io.use((socket, next) => {
-    console.log("[DEBUG] handshake.auth:", socket.handshake.auth);
     const { deviceId, key } = socket.handshake.auth || {};
 
     if (deviceId !== undefined || key !== undefined) {
@@ -62,10 +61,15 @@ function initSocket(server) {
       return next();
     }
 
-    sessionMiddleware(socket.request, {}, () => {
-      if (socket.request.session?.username) return next();
-      return next(new Error("Unauthorized"));
-    });
+    getSession(socket.request)
+      .then((session) => {
+        if (session?.user) {
+          socket.user = session.user;
+          return next();
+        }
+        next(new Error("Unauthorized"));
+      })
+      .catch(() => next(new Error("Unauthorized")));
   });
 
   io.on("connection", (socket) => {
@@ -129,7 +133,7 @@ function initSocket(server) {
     }
 
     // ── Connexion client web (session utilisateur) — comportement inchangé ──
-    const socketUser = socket.request.session?.username || "inconnu";
+    const socketUser = socket.user?.username || "inconnu";
     authLog(
       socketIp,
       "INFO",
