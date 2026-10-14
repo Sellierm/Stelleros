@@ -59,6 +59,7 @@ export default function FieldsPage() {
   const [selectedCrop, setSelectedCrop] = useState(null);
   const [gpsPositions, setGpsPositions] = useState({});
   const [showPdtInfo, setShowPdtInfo] = useState(false);
+  const [arePanelsVisible, setArePanelsVisible] = useState(true);
   const [implementWidths, setImplementWidths] = useState({});
   const [availableTrackDevices, setAvailableTrackDevices] = useState([]);
   const [coverageResult, setCoverageResult] = useState(null);
@@ -516,9 +517,11 @@ export default function FieldsPage() {
                   placemarks[i].getElementsByTagName("description")[0];
                 if (desc) {
                   const m = desc.textContent.match(
-                    /Surface\s*\(Ha\)\s*:\s*(\d+(\.\d+)?)/,
+                    /Surface\s*\(Ha\)\s*:\s*([\d.,]+)/i,
                   );
-                  if (m) surface = parseFloat(m[1]);
+                  if (m) {
+                    surface = Number.parseFloat(m[1].replace(",", "."));
+                  }
                 }
 
                 const extendedData = placemarks[i].getElementsByTagName("Data");
@@ -539,8 +542,11 @@ export default function FieldsPage() {
                 const polygonNodes =
                   placemarks[i].getElementsByTagName("Polygon");
                 for (let p = 0; p < polygonNodes.length; p++) {
-                  const coordinatesNode =
-                    polygonNodes[p].getElementsByTagName("coordinates")[0];
+                  const outerBoundary =
+                    polygonNodes[p].getElementsByTagName("outerBoundaryIs")[0];
+                  const coordinatesNode = (
+                    outerBoundary || polygonNodes[p]
+                  ).getElementsByTagName("coordinates")[0];
                   if (!coordinatesNode) continue;
 
                   const points = coordinatesNode.textContent
@@ -673,7 +679,11 @@ export default function FieldsPage() {
     <div className="fields-page">
       <Nav />
       <div id="mapCap">
-        <div id="legend">
+        <div className={`fields-layout ${arePanelsVisible ? "" : "panels-hidden"}`}>
+          <div
+            id="legend"
+            className={arePanelsVisible ? "" : "fields-panel-hidden"}
+          >
           <h2>Légende</h2>
           {Object.entries(CROP_COLORS).map(([name, color]) => (
             <div
@@ -704,45 +714,98 @@ export default function FieldsPage() {
               />
               <p>{name === "Pdt" ? "Pdt*" : name}</p>
             </div>
-          ))}
+            ))}
           {showPdtInfo && (
             <div className="lin">
-              <p id="info" style={{ padding: 0, marginTop: "-2%" }}>
-                *Pdt: Pomme de terre
-              </p>
+            <p id="info" style={{ padding: 0, marginTop: "-2%" }}>
+              *Pdt: Pomme de terre
+            </p>
             </div>
           )}
-        </div>
+          </div>
 
-        <div id="map" ref={mapRef} />
-
-        <div id="infoPanel">
-          <div id="capture">
-            <h2>Info</h2>
-            <div className="lin">
-              <p>{mapInfo[0]}</p>
-            </div>
-            <div className="lin">
-              <p>{mapInfo[1]}</p>
+          <div className="fields-map-column">
+            <div id="map" ref={mapRef} />
+            <div className="fields-filters">
+              <select
+                id="year"
+                value={year}
+                onChange={(e) => changeYear(parseInt(e.target.value))}
+              >
+                {YEARS.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+              <select
+                id="gps-date"
+                value={selectedDate}
+                onChange={(e) => changeDate(e.target.value)}
+                disabled={
+                  !availableDates.filter((date) =>
+                    date.startsWith(`${year}-`),
+                  ).length
+                }
+              >
+                {!availableDates.filter((date) =>
+                  date.startsWith(`${year}-`),
+                ).length && <option value="">Aucune trace</option>}
+                {availableDates
+                  .filter((date) => date.startsWith(`${year}-`))
+                  .map((date) => (
+                    <option key={date} value={date}>
+                      {date}
+                    </option>
+                  ))}
+              </select>
             </div>
           </div>
-          <div id="newCapture">
-            <h2>Données</h2>
-            <div className="lin">
-              <p>Total (Ha) : {totalHa !== null ? totalHa : ""}</p>
-            </div>
-            {selectedCrop && (
+
+          <button
+            className="fields-layout-toggle"
+            type="button"
+            aria-label={
+              arePanelsVisible
+                ? "Masquer les panneaux"
+                : "Afficher les panneaux"
+            }
+            aria-expanded={arePanelsVisible}
+            onClick={() => setArePanelsVisible((visible) => !visible)}
+          >
+            {arePanelsVisible ? "⟨ Masquer les panneaux ⟩" : "⟨ Afficher les panneaux ⟩"}
+          </button>
+
+          <div
+            id="infoPanel"
+            className={arePanelsVisible ? "" : "fields-panel-hidden"}
+          >
+            <div id="capture">
+              <h2>Info</h2>
               <div className="lin">
-                <p>
-                  {selectedCrop} (Ha) :{" "}
-                  {cropTotals[selectedCrop]
-                    ? cropTotals[selectedCrop].toFixed(2)
-                    : "0.00"}
-                </p>
+                <p>{mapInfo[0]}</p>
               </div>
-            )}
-          </div>
-          <div id="coverageCalc">
+              <div className="lin">
+                <p>{mapInfo[1]}</p>
+              </div>
+            </div>
+            <div id="newCapture">
+              <h2>Données</h2>
+              <div className="lin">
+                <p>Total (Ha) : {totalHa !== null ? totalHa : ""}</p>
+              </div>
+              {selectedCrop && (
+                <div className="lin">
+                  <p>
+                    {selectedCrop} (Ha) :{" "}
+                    {cropTotals[selectedCrop]
+                      ? cropTotals[selectedCrop].toFixed(2)
+                      : "0.00"}
+                  </p>
+                </div>
+              )}
+            </div>
+            <div id="coverageCalc">
             <h2>Surface couverte</h2>
             {availableTrackDevices.length === 0 ? (
               <div className="lin">
@@ -796,10 +859,10 @@ export default function FieldsPage() {
                 <p>{coverageResult.totalAreaHa.toFixed(2)} Ha couverts</p>
               </div>
             )}
-          </div>
-          <div id="gpsDevices">
-            <h2>GPS</h2>
-            <div id="deviceButtons">
+              </div>
+              <div id="gpsDevices">
+                <h2>GPS</h2>
+                <div id="deviceButtons">
               {Object.keys(gpsPositions).map((id) => {
                 const pos = gpsPositions[id];
                 const speed = formatSpeed(pos);
@@ -836,41 +899,10 @@ export default function FieldsPage() {
                   </button>
                 );
               })}
+                </div>
+              </div>
             </div>
-          </div>
         </div>
-      </div>
-
-      <div className="fields-filters">
-        <select
-          id="year"
-          value={year}
-          onChange={(e) => changeYear(parseInt(e.target.value))}
-        >
-          {YEARS.map((y) => (
-            <option key={y} value={y}>
-              {y}
-            </option>
-          ))}
-        </select>
-        <select
-          id="gps-date"
-          value={selectedDate}
-          onChange={(e) => changeDate(e.target.value)}
-          disabled={
-            !availableDates.filter((date) => date.startsWith(`${year}-`)).length
-          }
-        >
-          {!availableDates.filter((date) => date.startsWith(`${year}-`))
-            .length && <option value="">Aucune trace</option>}
-          {availableDates
-            .filter((date) => date.startsWith(`${year}-`))
-            .map((date) => (
-              <option key={date} value={date}>
-                {date}
-              </option>
-            ))}
-        </select>
       </div>
     </div>
   );

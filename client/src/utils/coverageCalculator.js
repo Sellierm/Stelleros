@@ -25,20 +25,30 @@ function pointInPolygon(point, polygon) {
   return inside;
 }
 
-function distancePointToSegment(point, start, end) {
+function segmentIntersectsRectangle(start, end, minX, minY, maxX, maxY) {
   const dx = end.x - start.x;
   const dy = end.y - start.y;
-  const lengthSquared = dx * dx + dy * dy;
-  if (lengthSquared === 0) {
-    return Math.hypot(point.x - start.x, point.y - start.y);
+  let enter = 0;
+  let exit = 1;
+
+  for (const [origin, direction, min, max] of [
+    [start.x, dx, minX, maxX],
+    [start.y, dy, minY, maxY],
+  ]) {
+    if (direction === 0) {
+      if (origin < min || origin > max) return false;
+      continue;
+    }
+
+    let near = (min - origin) / direction;
+    let far = (max - origin) / direction;
+    if (near > far) [near, far] = [far, near];
+    enter = Math.max(enter, near);
+    exit = Math.min(exit, far);
+    if (enter > exit) return false;
   }
 
-  let ratio =
-    ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared;
-  ratio = Math.max(0, Math.min(1, ratio));
-  const projectedX = start.x + ratio * dx;
-  const projectedY = start.y + ratio * dy;
-  return Math.hypot(point.x - projectedX, point.y - projectedY);
+  return true;
 }
 
 function computeFieldCoverage(fieldPolygonLatLng, tracksWithWidth, cellSizeM) {
@@ -105,8 +115,14 @@ function computeFieldCoverage(fieldPolygonLatLng, tracksWithWidth, cellSizeM) {
           if (covered[index]) continue;
           const cellX = minX + (column + 0.5) * cellSizeM;
           if (
-            distancePointToSegment({ x: cellX, y: cellY }, start, end) <=
-            halfWidth
+            segmentIntersectsRectangle(
+              start,
+              end,
+              cellX - cellSizeM / 2 - halfWidth,
+              cellY - cellSizeM / 2 - halfWidth,
+              cellX + cellSizeM / 2 + halfWidth,
+              cellY + cellSizeM / 2 + halfWidth,
+            )
           ) {
             covered[index] = 1;
           }
