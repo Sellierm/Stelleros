@@ -5,7 +5,7 @@ import { username } from "better-auth/plugins";
 import { toNodeHandler } from "better-auth/node";
 
 const require = createRequire(import.meta.url);
-const { pool, IS_PROD, ALLOWED_ORIGINS } = require("./config");
+const { pool, IS_PROD, ALLOWED_ORIGINS } = require("../config");
 
 export const auth = betterAuth({
   appName: "Stelleros",
