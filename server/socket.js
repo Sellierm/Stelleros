@@ -236,6 +236,62 @@ function initSocket(server) {
       });
     });
 
+    socket.on("askWeatherSummary", (startDate) => {
+      const date = sanitizeDate(startDate);
+      if (!date) return;
+
+      const sencrop = require("./modules/sencropModule");
+      const selectedDate = new Date(date);
+      selectedDate.setUTCDate(selectedDate.getUTCDate() - 1);
+      const selectedDay = selectedDate.getUTCDay();
+      const daysSinceMonday = selectedDay === 0 ? 7 : selectedDay;
+      const rainUrl = `${sencrop.endPoint}/users/${sencrop.userId}/devices/${sencrop.raincropEarlId}/data/daily?beforeDate=${date}&days=${daysSinceMonday}&measures=RAIN_FALL&patched=true`;
+      const temperatureUrl = `${sencrop.endPoint}/users/${sencrop.userId}/devices/${sencrop.raincropEarlId}/data/hourly?beforeDate=${date}&days=${daysSinceMonday}&measures=TEMPERATURE&patched=true`;
+      const windUrl = `${sencrop.endPoint}/users/${sencrop.userId}/devices/${sencrop.windcropEarlId}/data/hourly?beforeDate=${date}&days=${daysSinceMonday}&measures=WIND_SPEED&patched=true`;
+
+      Promise.all([
+        fetchSencropData(rainUrl),
+        fetchSencropData(temperatureUrl),
+        fetchSencropData(windUrl),
+      ])
+        .then(([rainResult, temperatureResult, windResult]) => {
+          const rainRows = rainResult?.measures?.data || [];
+          const temperatureRows = temperatureResult?.measures?.data || [];
+          const windRows = windResult?.measures?.data || [];
+          const numericValue = (row, key) => {
+            const value = row?.[key];
+            return Number(value?.value ?? value);
+          };
+          const rainfall = rainRows
+            .map((row) => numericValue(row, "RAIN_FALL"))
+            .filter(Number.isFinite);
+          const wind = windRows
+            .map((row) => numericValue(row, "WIND_SPEED"))
+            .filter(Number.isFinite);
+          const temperatures = rainRows
+            .concat(temperatureRows)
+            .map((row) => numericValue(row, "TEMPERATURE"))
+            .filter(Number.isFinite);
+
+          socket.emit("getWeatherSummary", {
+            rainfallMm: rainfall.reduce((sum, value) => sum + value, 0),
+            averageTemperature:
+              temperatures.length > 0
+                ? temperatures.reduce((sum, value) => sum + value, 0) /
+                  temperatures.length
+                : null,
+            averageWind:
+              wind.length > 0
+                ? wind.reduce((sum, value) => sum + value, 0) / wind.length
+                : null,
+          });
+        })
+        .catch((error) => {
+          console.error("Erreur résumé météo Sencrop:", error);
+          socket.emit("getWeatherSummary", null);
+        });
+    });
+
     socket.on("forceDisconnect", () => socket.disconnect(true));
   });
 

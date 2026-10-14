@@ -23,6 +23,7 @@ export default function SencropPage() {
 
   const [loading1, setLoading1] = useState(false);
   const [loading2, setLoading2] = useState(false);
+  const [weatherSummary, setWeatherSummary] = useState(null);
 
   usePageMeta(
     "Sencrop",
@@ -83,6 +84,14 @@ export default function SencropPage() {
 
     if (f === "HOUR") socket.emit("askDataW1", askedDay.toISOString(), dt);
     else socket.emit("askDataW2", askedDay.toISOString(), dt);
+  };
+
+  const emitWeatherSummary = (date = day1) => {
+    if (!socket) return;
+    const requestedDate = new Date(date);
+    requestedDate.setHours(0, 0, 0, 0);
+    requestedDate.setDate(requestedDate.getDate() + 1);
+    socket.emit("askWeatherSummary", requestedDate.toISOString());
   };
 
   // ── Socket listeners ────────────────────────────────────────────────────────
@@ -359,6 +368,10 @@ export default function SencropPage() {
       });
     });
 
+    socket.on("getWeatherSummary", (summary) => {
+      setWeatherSummary(summary);
+    });
+
     // ─ W2 (windcrop 10min) ─
     socket.on("getDataW2", (data, measures) => {
       setLoading2(false);
@@ -411,6 +424,7 @@ export default function SencropPage() {
       socket.off("getDataR2");
       socket.off("getDataW1");
       socket.off("getDataW2");
+      socket.off("getWeatherSummary");
     };
   }, [socket]);
 
@@ -419,6 +433,7 @@ export default function SencropPage() {
     if (socket) {
       emitR();
       emitW();
+      emitWeatherSummary();
     }
   }, [socket]); // eslint-disable-line
 
@@ -433,133 +448,210 @@ export default function SencropPage() {
   return (
     <div className="sencrop-page">
       <Nav />
-      <div className="charts">
-        <div className="box2">
-          <div className="sencrop-chart-shell">
-            {loading1 && (
-              <div className="sencrop-loading-overlay">
-                <img src="/assets/loading.gif" alt="loading" />
+      <main className="sencrop-dashboard">
+        <section className="charts" aria-label="Graphiques météo">
+          <article className="box2">
+            <div className="sencrop-card-heading">
+              <div>
+                <span className="sencrop-card-kicker">RAIN CROP</span>
               </div>
-            )}
-            <canvas ref={chart1Ref} className={loading1 ? "is-hidden" : ""} />
-          </div>
-        </div>
-        <div className="box2">
-          <div className="sencrop-chart-shell">
-            {loading2 && (
-              <div className="sencrop-loading-overlay">
-                <img src="/assets/loading.gif" alt="loading" />
+              <span className="sencrop-card-icon">☁</span>
+            </div>
+            <div className="sencrop-chart-shell">
+              {loading1 && (
+                <div className="sencrop-loading-overlay">
+                  <img src="/assets/loading.gif" alt="loading" />
+                </div>
+              )}
+              <canvas ref={chart1Ref} className={loading1 ? "is-hidden" : ""} />
+            </div>
+          </article>
+          <article className="box2">
+            <div className="sencrop-card-heading">
+              <div>
+                <span className="sencrop-card-kicker">WIND CROP</span>
               </div>
-            )}
-            <canvas ref={chart2Ref} className={loading2 ? "is-hidden" : ""} />
+              <span className="sencrop-card-icon">↝</span>
+            </div>
+            <div className="sencrop-chart-shell">
+              {loading2 && (
+                <div className="sencrop-loading-overlay">
+                  <img src="/assets/loading.gif" alt="loading" />
+                </div>
+              )}
+              <canvas ref={chart2Ref} className={loading2 ? "is-hidden" : ""} />
+            </div>
+          </article>
+        </section>
+
+        <section
+          className="sencrop-summary"
+          aria-label="Résumé météo des sept derniers jours"
+        >
+          <article className="sencrop-summary-card">
+            <span className="sencrop-summary-icon">雨</span>
+            <div>
+              <span>Total pluie · 7 jours</span>
+              <strong>
+                {weatherSummary?.rainfallMm != null
+                  ? `${weatherSummary.rainfallMm.toFixed(1)} mm`
+                  : "—"}
+              </strong>
+            </div>
+          </article>
+          <article className="sencrop-summary-card">
+            <span className="sencrop-summary-icon">°C</span>
+            <div>
+              <span>Température moyenne</span>
+              <strong>
+                {weatherSummary?.averageTemperature != null
+                  ? `${weatherSummary.averageTemperature.toFixed(1)} °C`
+                  : "—"}
+              </strong>
+            </div>
+          </article>
+          <article className="sencrop-summary-card">
+            <span className="sencrop-summary-icon">↝</span>
+            <div>
+              <span>Vent moyen</span>
+              <strong>
+                {weatherSummary?.averageWind != null
+                  ? `${weatherSummary.averageWind.toFixed(1)} km/h`
+                  : "—"}
+              </strong>
+            </div>
+          </article>
+        </section>
+
+        <section
+          className="sencrop-controls"
+          aria-label="Paramètres des graphiques"
+        >
+          <div className="sencrop-control-group">
+            <span className="sencrop-control-title">Raincrop</span>
+            <div className="sencrop-control-grid">
+              <div className="sencrop-control">
+                <label htmlFor="data1">
+                  <p>Type de donnée :</p>
+                </label>
+                <select
+                  id="data1"
+                  value={data1}
+                  onChange={(e) => {
+                    setData1(e.target.value);
+                    emitR(day1, e.target.value, freq1);
+                  }}
+                >
+                  <option value="TEMPERATURE">Température</option>
+                  <option value="RAIN_FALL">Pluviométrie</option>
+                  <option value="RELATIVE_HUMIDITY">Hygrométrie</option>
+                  <option value="WET_TEMPERATURE">Température humide</option>
+                </select>
+              </div>
+              <div className="sencrop-control">
+                <label htmlFor="frequency1">
+                  <p>Fréquence :</p>
+                </label>
+                <select
+                  id="frequency1"
+                  value={freq1}
+                  onChange={(e) => {
+                    setFreq1(e.target.value);
+                    emitR(day1, data1, e.target.value);
+                  }}
+                >
+                  <option value="HOUR">Heure</option>
+                  <option value="QUARTER">Quart d'heure</option>
+                </select>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+          <div className="sencrop-control-group">
+            <span className="sencrop-control-title">Windcrop</span>
+            <div className="sencrop-control-grid">
+              <div className="sencrop-control">
+                <label htmlFor="data2">
+                  <p>Type de donnée :</p>
+                </label>
+                <select
+                  id="data2"
+                  value={data2}
+                  onChange={(e) => {
+                    setData2(e.target.value);
+                    emitW(day2, e.target.value, freq2);
+                  }}
+                >
+                  <option value="WIND_SPEED">Vitesse</option>
+                  <option value="WIND_GUST">Rafales</option>
+                  <option value="WIND_DIRECTION">Angle</option>
+                </select>
+              </div>
+              <div className="sencrop-control">
+                <label htmlFor="frequency2">
+                  <p>Fréquence :</p>
+                </label>
+                <select
+                  id="frequency2"
+                  value={freq2}
+                  onChange={(e) => {
+                    setFreq2(e.target.value);
+                    emitW(day2, data2, e.target.value);
+                  }}
+                >
+                  <option value="HOUR">Heure</option>
+                  <option value="TEN">Dizaine de minutes</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </section>
 
-      <div className="box1">
-        <div>
-          <label htmlFor="data1">
-            <p>Type de donnée :</p>
-          </label>
-          <select
-            id="data1"
-            value={data1}
-            onChange={(e) => {
-              setData1(e.target.value);
-              emitR(day1, e.target.value, freq1);
-            }}
-          >
-            <option value="TEMPERATURE">Température</option>
-            <option value="RAIN_FALL">Pluviométrie</option>
-            <option value="RELATIVE_HUMIDITY">Hygrométrie</option>
-            <option value="WET_TEMPERATURE">Température humide</option>
-          </select>
-        </div>
-        <div>
-          <label htmlFor="frequency1">
-            <p>Fréquence :</p>
-          </label>
-          <select
-            id="frequency1"
-            value={freq1}
-            onChange={(e) => {
-              setFreq1(e.target.value);
-              emitR(day1, data1, e.target.value);
-            }}
-          >
-            <option value="HOUR">Heure</option>
-            <option value="QUARTER">Quart d'heure</option>
-          </select>
-        </div>
-        <div>
-          <label htmlFor="data2">
-            <p>Type de donnée :</p>
-          </label>
-          <select
-            id="data2"
-            value={data2}
-            onChange={(e) => {
-              setData2(e.target.value);
-              emitW(day2, e.target.value, freq2);
-            }}
-          >
-            <option value="WIND_SPEED">Vitesse</option>
-            <option value="WIND_GUST">Rafales</option>
-            <option value="WIND_DIRECTION">Angle</option>
-          </select>
-        </div>
-        <div>
-          <label htmlFor="frequency2">
-            <p>Fréquence :</p>
-          </label>
-          <select
-            id="frequency2"
-            value={freq2}
-            onChange={(e) => {
-              setFreq2(e.target.value);
-              emitW(day2, data2, e.target.value);
-            }}
-          >
-            <option value="HOUR">Heure</option>
-            <option value="TEN">Dizaine de minutes</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="box1">
-        <div>
-          <label htmlFor="day1">
-            <p>Date :</p>
-          </label>
-          <input
-            id="day1"
-            type="date"
-            max={today}
-            min="2020-11-07"
-            value={day1}
-            onChange={(e) => {
-              setDay1(e.target.value);
-              emitR(e.target.value, data1, freq1);
-            }}
-          />
-        </div>
-        <div>
-          <label htmlFor="day2">
-            <p>Date :</p>
-          </label>
-          <input
-            id="day2"
-            type="date"
-            max={today}
-            min="2020-11-07"
-            value={day2}
-            onChange={(e) => {
-              setDay2(e.target.value);
-              emitW(e.target.value, data2, freq2);
-            }}
-          />
-        </div>
-      </div>
+        <section className="sencrop-dates" aria-label="Dates des relevés">
+          <div className="sencrop-control">
+            <label htmlFor="day1">
+              <p>Date :</p>
+            </label>
+            <input
+              id="day1"
+              type="date"
+              max={today}
+              min="2020-11-07"
+              value={day1}
+              onClick={(event) => {
+                if (typeof event.currentTarget.showPicker === "function") {
+                  event.currentTarget.showPicker();
+                }
+              }}
+              onChange={(e) => {
+                setDay1(e.target.value);
+                emitR(e.target.value, data1, freq1);
+                emitWeatherSummary(e.target.value);
+              }}
+            />
+          </div>
+          <div className="sencrop-control">
+            <label htmlFor="day2">
+              <p>Date :</p>
+            </label>
+            <input
+              id="day2"
+              type="date"
+              max={today}
+              min="2020-11-07"
+              value={day2}
+              onClick={(event) => {
+                if (typeof event.currentTarget.showPicker === "function") {
+                  event.currentTarget.showPicker();
+                }
+              }}
+              onChange={(e) => {
+                setDay2(e.target.value);
+                emitW(e.target.value, data2, freq2);
+              }}
+            />
+          </div>
+        </section>
+      </main>
     </div>
   );
 }
