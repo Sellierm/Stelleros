@@ -1,168 +1,264 @@
 # Stelleros
 
-Stelleros is a farm management web app.
+Stelleros is a farm-management application built with React, Vite, Express,
+Socket.IO and MariaDB/MySQL.
 
-It lets users:
+The application provides:
 
-- view forecast (OpenWeatherMap) and Sencrop weather data,
-- display fields on a map,
-- track GPS positions/history of machines,
-- track inventory of plant protection products and interventions
+- field maps and crop data from Google My Maps/KML;
+- OpenWeather and Sencrop weather data;
+- GPS position ingestion and machine position history;
+- plant-protection product stock and application tracking;
+- Better Auth username/password authentication.
 
-## Run with Docker
+## Project structure
 
-The Docker image serves the built React client and the Express server from the
-same container. Docker must be installed and running.
+```text
+client/                 React/Vite frontend
+server/                 Express API and Socket.IO server
+server/lib/auth.mjs     Better Auth configuration
+server/lib/authBridge.js CommonJS bridge for Express
+server/modules/         Database, map and Sencrop modules
+server/routes/          API route modules
+Dockerfile              Production image definition
+```
 
-### 1. Configure the environment
+## Requirements
 
-Create the server environment file and fill in the required values described
-below:
+- Node.js 20 or newer;
+- MariaDB/MySQL;
+- Docker for container deployment;
+- API credentials for Google Maps, OpenWeather and Sencrop when those features
+  are enabled.
+
+## Configuration
+
+Create the server environment file from the template:
+
+```bash
+cp server/.env.example server/.env
+```
+
+PowerShell:
 
 ```powershell
 Copy-Item server/.env.example server/.env
 ```
 
-The `server/.env` file is not copied into the image. It is passed to the
-container at runtime, so keep it out of version control.
+Set the values in `server/.env`:
 
-### 2. Build the client and the image
+| Variable | Purpose |
+| --- | --- |
+| `NODE_ENV` | Runtime environment, normally `development` or `production` |
+| `PORT`, `IP` | API listening port and address |
+| `CORS_ORIGINS` | Comma-separated allowed frontend origins |
+| `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_DATABASE` | MariaDB/MySQL connection |
+| `BETTER_AUTH_SECRET` | Long random secret used by Better Auth |
+| `BETTER_AUTH_URL` | Public URL of the application |
+| `GPS_INGEST_KEY` | Shared key for GPS devices |
+| `GPS_ALLOWED_IDS` | Comma-separated authorized GPS device IDs |
+| `GOOGLE_MAPS_API_KEY` | Google Maps JavaScript API key |
+| `OPENWEATHER_API_KEY` | OpenWeather API key |
+| `FORECAST_LATITUDE`, `FORECAST_LONGITUDE`, `FORECAST_CITY` | Forecast location |
+| `SENCROP_*` | Sencrop credentials and device configuration |
 
-The Dockerfile expects `client/dist` to exist before the image is built:
+Generate a Better Auth secret with:
 
-```powershell
-npm install --prefix client
-npm --prefix client run build
-docker build -t farm-react .
+```bash
+openssl rand -base64 32
 ```
 
-### 3. Start the container
+Never commit `server/.env` or expose any database password or authentication
+secret.
 
-The application listens on port `3000` in this example:
+## Development
 
-```powershell
-docker run --rm --name farm-react `
-  --env-file server/.env `
-  -e NODE_ENV=production `
-  -e PORT=3000 `
-  -p 3000:3000 `
-  farm-react
+Install both applications:
+
+```bash
+npm run install:all
 ```
 
-Open <http://localhost:3000>. To stop the container, press `Ctrl+C`.
+Start the API in one terminal:
 
-After changing frontend code, run the client build and `docker build` again so
-the updated `client/dist` is included in the image.
-
-## Getting Started / Implementation
-
-To start using this project, you need to create your own configuration files and obtain required API keys from external services.
-
-### 1. Environment variables (`server/.env.example`)
-
-Copy `server/.env.example` to `server/.env` and fill in the values.
-
-What each group is used for:
-
-- `NODE_ENV`, `PORT`, `IP`: server runtime and listening address.
-- `CORS_ORIGINS`: allowed frontend origins for API calls.
-- `SESSION_SECRET`: session and CSRF security secret.
-- `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_DATABASE`: MySQL connection.
-- `GPS_INGEST_KEY`, `GPS_ALLOWED_IDS`: authorize GPS devices sending locations (should be the same in gps-sender).
-- `GOOGLE_MAPS_API_KEY`: Google Maps display on the Fields page. You must generate it from the [Google Cloud Console](https://console.cloud.google.com/) (Maps JavaScript API).
-- `OPENWEATHER_API_KEY`, `FORECAST_LATITUDE`, `FORECAST_LONGITUDE`, `FORECAST_CITY`: weather forecast data. Create an account on [OpenWeatherMap](https://openweathermap.org/) to get your API key.
-- `SENCROP_*`: Sencrop API credentials and device identifiers. To learn how to get your Sencrop API keys, refer to their [API workflow for users](https://observablehq.com/@57ac0233e9966902/api-workflow-for-users).
-
-### 2. Custom Maps module (`server/modules/mapModule.js`)
-
-Create a file at `server/modules/mapModule.js` based on your [Google My Maps](https://www.google.com/maps/d/):
-
-```javascript
-module.exports = {
-  key: process.env.GOOGLE_MAPS_API_KEY,
-  table: [
-    // Layer mapping (Year / Crop configuration mapping your KMLs)
-    "https://www.google.com/maps/d/kml?forcekml=1&mid=YOUR_MAP_ID&lid=YOUR_LAYER_ID",
-    "https://www.google.com/maps/d/kml?forcekml=1&mid=YOUR_MAP_ID&lid=YOUR_LAYER_ID",
-    "https://www.google.com/maps/d/kml?forcekml=1&mid=YOUR_MAP_ID&lid=YOUR_LAYER_ID",
-    // Add as many layers as needed matching your frontend logic
-  ],
-};
+```bash
+npm run dev:server
 ```
 
-_Note: To extract KML links, open your custom map in Google My Maps, click on the three dots next to a layer -> "Export data" -> KML, and observe the download URL._
+Start the Vite client in another:
 
-### 3. MySQL Database (Structure)
+```bash
+npm run dev:client
+```
 
-The project relies on a MySQL database containing the following tables. You must create them on your server:
+The client runs on <http://localhost:5173> and proxies `/api` and `/socket.io`
+to the API, which listens on port `4200` by default.
+
+The individual package commands are also available:
+
+```bash
+cd server && npm install && npm run dev
+cd client && npm install && npm run dev
+```
+
+## Authentication and database migration
+
+Authentication is handled by Better Auth. Express does not use
+`express-session`; sessions are stored in the database and accessed through
+`server/lib/authBridge.js`.
+
+Create Better Auth's tables with the CLI from the `server` directory:
+
+```bash
+cd server
+npx @better-auth/cli@latest migrate --config lib/auth.mjs
+```
+
+The migration creates:
+
+- `auth_user`;
+- `auth_session`;
+- `auth_account`;
+- `auth_verification`.
+
+Verify the result:
 
 ```sql
-CREATE TABLE `user` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `name` varchar(255) NOT NULL,
-  `password` varchar(255) NOT NULL, -- Password hashed by bcrypt
-  PRIMARY KEY (`id`)
+SHOW TABLES LIKE 'auth_%';
+```
+
+Public sign-up is disabled. Existing users from the legacy `user` table must
+be copied to Better Auth after the schema migration. Back up the database and
+inspect the generated columns first:
+
+```sql
+DESCRIBE auth_user;
+DESCRIBE auth_account;
+```
+
+Then, if the columns match the current Better Auth schema:
+
+```sql
+INSERT INTO auth_user
+  (id, name, email, emailVerified, username, displayUsername, createdAt, updatedAt)
+SELECT
+  UUID(),
+  u.name,
+  CONCAT(LOWER(u.name), '@stelleros.local'),
+  0,
+  LOWER(u.name),
+  u.name,
+  NOW(),
+  NOW()
+FROM `user` u
+WHERE NOT EXISTS (
+  SELECT 1 FROM auth_user a WHERE a.displayUsername = u.name
 );
 
-CREATE TABLE `vehicles` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `name` varchar(255) NOT NULL,
-  `type` varchar(255) DEFAULT NULL,
-  `brand` varchar(255) DEFAULT NULL,
-  `model` varchar(255) DEFAULT NULL,
-  `year` int(4) DEFAULT NULL,
-  `plate` varchar(50) DEFAULT NULL,
-  `hours` float DEFAULT 0,
-  PRIMARY KEY (`id`)
-);
-
-CREATE TABLE `maintenance` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `vehicle_id` int(11) NOT NULL,
-  `type` varchar(255) NOT NULL,
-  `date` date NOT NULL,
-  `hours_at_service` float DEFAULT NULL,
-  `next_date` date DEFAULT NULL,
-  `next_hours` float DEFAULT NULL,
-  `notes` text DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  FOREIGN KEY (`vehicle_id`) REFERENCES `vehicles`(`id`) ON DELETE CASCADE
-);
-
-/* The following tables are required for the Phyto module */
-CREATE TABLE `phyto_products` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `name` varchar(255) NOT NULL,
-  `category` varchar(255) NOT NULL,
-  `unit` varchar(50) NOT NULL,
-  `stock` float DEFAULT 0,
-  `notes` text DEFAULT NULL,
-  PRIMARY KEY (`id`)
-);
-
-CREATE TABLE `phyto_applications` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `product_id` int(11) NOT NULL,
-  `date` date NOT NULL,
-  `field` varchar(255) NOT NULL,
-  `quantity` float NOT NULL,
-  `notes` text DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  FOREIGN KEY (`product_id`) REFERENCES `phyto_products`(`id`) ON DELETE CASCADE
+INSERT INTO auth_account
+  (id, accountId, providerId, userId, password, createdAt, updatedAt)
+SELECT
+  UUID(),
+  a.id,
+  'credential',
+  a.id,
+  u.password,
+  NOW(),
+  NOW()
+FROM auth_user a
+JOIN `user` u ON u.name = a.displayUsername
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM auth_account acc
+  WHERE acc.userId = a.id
+    AND acc.providerId = 'credential'
 );
 ```
 
-## GPS source
+Existing passwords must be bcrypt hashes (`$2...`). Keep the legacy `user`
+table until login, logout, session expiration and all protected routes have
+been validated.
 
-GPS data is sent by the **gps-sender** repository to this project's endpoint:
+## Database modules
 
-- Repository: [https://github.com/Sellierm/gps-sender](https://github.com/Sellierm/gps-sender)
-- `POST /api/location`
+The API expects the business tables used by the server, including:
 
-## View
+- `vehicles`;
+- `maintenance`;
+- `phyto_products`;
+- `phyto_applications`;
+- `phyto_application_products`.
 
-Actually the website looks like that :
-<img width="1908" height="489" alt="image" src="https://github.com/user-attachments/assets/b579194b-b468-492b-8556-e6131bd391e8" />
-<img width="1917" height="804" alt="image" src="https://github.com/user-attachments/assets/43901f6b-944d-46f5-afe6-3664ffda4713" />
-<img width="1914" height="860" alt="image" src="https://github.com/user-attachments/assets/45bab89c-316a-4fd2-8896-e98b27ad9f19" />
-<img width="1909" height="416" alt="image" src="https://github.com/user-attachments/assets/a8107804-f02e-479a-b7c1-f2ee4eb80915" />
+The Phyto API uses the following relationships:
+
+- an application stores its `date` and `notes`;
+- `phyto_application_products` links applications to products;
+- `quantity_used` is used to update product stock.
+
+Create or maintain these tables using the database schema for the deployment
+environment. Do not use the obsolete schema in which
+`phyto_applications` contains a single `product_id` column.
+
+## Maps and weather configuration
+
+Field KML URLs are configured in
+[`server/modules/mapModule.js`](server/modules/mapModule.js), one entry per
+supported year. Update that file when adding or replacing Google My Maps
+layers.
+
+The Google Maps API key is supplied through `GOOGLE_MAPS_API_KEY`. OpenWeather
+and Sencrop settings are supplied through the corresponding environment
+variables.
+
+## Security
+
+- Better Auth provides authentication sessions and authentication rate
+  limiting.
+- Protected API routes use the Better Auth session middleware.
+- Unsafe API methods require a same-origin request.
+- Phyto routes have an additional IP-based rate limiter.
+- GPS HTTP ingestion uses `GPS_INGEST_KEY` and `GPS_ALLOWED_IDS`.
+- Web Socket.IO clients require a Better Auth session.
+- GPS Socket.IO clients use their device ID and ingestion key.
+
+## Production Docker image
+
+The image expects `client/dist` to exist before the image is built:
+
+```bash
+cd client
+npm ci
+npm run build
+cd ..
+docker build -t stelleros .
+```
+
+Run it on port `3000`:
+
+```bash
+docker run --rm --name stelleros \
+  --env-file server/.env \
+  -e NODE_ENV=production \
+  -e PORT=3000 \
+  -p 3000:3000 \
+  stelleros
+```
+
+Open <http://localhost:3000>. Rebuild the client and Docker image after
+frontend changes.
+
+If deployment uses Docker Compose, run Compose commands from the deployment
+environment's Compose file. This repository provides the `Dockerfile`, but
+does not require a Compose file for local image builds.
+
+## GPS sender
+
+GPS positions can be sent by the
+[gps-sender](https://github.com/Sellierm/gps-sender) project through:
+
+```text
+POST /api/location
+```
+
+The sender and this API must share the configured GPS ingestion key and
+authorized device IDs.
