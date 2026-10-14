@@ -77,7 +77,20 @@ export default function FieldsPage() {
   const markerByDeviceRef = useRef({});
   const infoWindowByDeviceRef = useRef({});
   const fieldPolygonsRef = useRef([]);
+  const fieldOverlaysRef = useRef([]);
   const trackPointsByDeviceRef = useRef({});
+
+  useEffect(() => {
+    fieldOverlaysRef.current.forEach(({ overlay, culture }) => {
+      const isSelected = selectedCrop && culture === selectedCrop;
+      overlay.setOptions({
+        fillOpacity: selectedCrop ? (isSelected ? 0.38 : 0.04) : 0,
+        strokeOpacity: selectedCrop ? (isSelected ? 0.95 : 0.18) : 0,
+        strokeWeight: isSelected ? 3 : 1,
+        zIndex: isSelected ? 2 : 1,
+      });
+    });
+  }, [selectedCrop]);
 
   usePageMeta("Fields", "/assets/icons8-champ-32.png");
 
@@ -508,6 +521,8 @@ export default function FieldsPage() {
               let total = 0;
               let cTotals = {};
               const fieldPolygons = [];
+              fieldOverlaysRef.current.forEach(({ overlay }) => overlay.setMap(null));
+              fieldOverlaysRef.current = [];
 
               for (let i = 0; i < placemarks.length; i++) {
                 let surface = 0;
@@ -539,6 +554,7 @@ export default function FieldsPage() {
                   if (mC) cultureStr = mC[1].trim();
                 }
 
+                const cultureName = normalizeCultureName(cultureStr);
                 const polygonNodes =
                   placemarks[i].getElementsByTagName("Polygon");
                 for (let p = 0; p < polygonNodes.length; p++) {
@@ -561,10 +577,26 @@ export default function FieldsPage() {
                         Number.isFinite(point.lat) &&
                         Number.isFinite(point.lng),
                     );
-                  if (points.length >= 3) fieldPolygons.push(points);
+                  if (points.length >= 3) {
+                    fieldPolygons.push(points);
+                    const overlay = new window.google.maps.Polygon({
+                      paths: points,
+                      map,
+                      strokeColor: CROP_COLORS[cultureName] || "#ffffff",
+                      strokeOpacity: 0,
+                      strokeWeight: 1,
+                      fillColor: CROP_COLORS[cultureName] || "#ffffff",
+                      fillOpacity: 0,
+                      clickable: false,
+                      zIndex: 1,
+                    });
+                    fieldOverlaysRef.current.push({
+                      overlay,
+                      culture: cultureName,
+                    });
+                  }
                 }
 
-                const cultureName = normalizeCultureName(cultureStr);
                 cTotals[cultureName] = (cTotals[cultureName] || 0) + surface;
                 total += surface;
               }
