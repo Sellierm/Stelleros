@@ -16,6 +16,7 @@
   flex: 1 1 auto;
   flex-direction: column;
   width: min(1480px, 100%);
+  min-width: 0;
   height: 100%;
   box-sizing: border-box;
   margin: 0 auto;
@@ -315,7 +316,15 @@ html.dark-theme .sencrop-page select {
 }
 
 @media (max-width: 1000px) {
+  .sencrop-page {
+    height: auto;
+    min-height: 100vh;
+    overflow-y: auto;
+  }
+
   .sencrop-dashboard {
+    height: auto;
+    min-height: calc(100vh - 56px);
     padding-top: 14px;
     padding-bottom: 14px;
   }
@@ -327,6 +336,16 @@ html.dark-theme .sencrop-page select {
 
   .box2 {
     min-height: 0;
+  }
+}
+
+@media (max-width: 820px) {
+  .sencrop-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .sencrop-dates {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -352,6 +371,10 @@ html.dark-theme .sencrop-page select {
     padding: 16px;
   }
 
+  .sencrop-controls {
+    gap: 14px;
+  }
+
   .sencrop-summary {
     grid-template-columns: 1fr;
     gap: 8px;
@@ -362,10 +385,11 @@ html.dark-theme .sencrop-page select {
   }
 
   .box2 {
+    min-height: 280px;
     padding: 16px 14px 12px;
   }
 
   .sencrop-chart-shell {
-    min-height: 0;
+    min-height: 220px;
   }
 }
