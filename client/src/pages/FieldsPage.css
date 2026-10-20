@@ -420,6 +420,24 @@ html.dark-theme .fields-layout-toggle:focus-visible {
   background: #8fe0bd;
 }
 
+html.dark-theme #map .gm-style-iw-c,
+html.dark-theme #map .gm-style-iw-d,
+html.dark-theme #map .gm-style-iw-tc {
+  filter: invert(1) hue-rotate(180deg) !important;
+}
+
+html.dark-theme #map .gm-style-iw-c {
+  background: #ffffff;
+}
+
+html.dark-theme #map .gm-style-iw-d {
+  color: #17312a;
+}
+
+html.dark-theme #map .gm-ui-hover-effect {
+  filter: invert(1) hue-rotate(180deg) !important;
+}
+
 @media (max-width: 900px) {
   .fields-layout {
     grid-template-columns: 145px minmax(0, 1fr) 210px;
