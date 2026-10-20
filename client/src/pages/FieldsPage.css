@@ -405,6 +405,21 @@ html.dark-theme .fields-filters select {
   background: rgba(15, 29, 25, 0.88);
 }
 
+html.dark-theme .fields-layout-toggle {
+  filter: invert(1) hue-rotate(180deg);
+  border-color: rgba(196, 235, 218, 0.42);
+  color: #f2fff8;
+  background: rgba(20, 52, 43, 0.96);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.42);
+}
+
+html.dark-theme .fields-layout-toggle:hover,
+html.dark-theme .fields-layout-toggle:focus-visible {
+  border-color: #8fe0bd;
+  color: #10251e;
+  background: #8fe0bd;
+}
+
 @media (max-width: 900px) {
   .fields-layout {
     grid-template-columns: 145px minmax(0, 1fr) 210px;
