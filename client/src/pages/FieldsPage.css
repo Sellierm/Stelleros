@@ -420,22 +420,52 @@ html.dark-theme .fields-layout-toggle:focus-visible {
   background: #8fe0bd;
 }
 
+html.dark-theme #map .gm-style-iw,
 html.dark-theme #map .gm-style-iw-c,
-html.dark-theme #map .gm-style-iw-d,
-html.dark-theme #map .gm-style-iw-tc {
-  filter: invert(1) hue-rotate(180deg) !important;
+html.dark-theme #map .gm-style-iw-ch,
+html.dark-theme #map .gm-style-iw-d {
+  background: #152722 !important;
+  color: #e2f0e9 !important;
 }
 
 html.dark-theme #map .gm-style-iw-c {
-  background: #ffffff;
+  border: 1px solid rgba(196, 235, 218, 0.2);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.42);
 }
 
 html.dark-theme #map .gm-style-iw-d {
-  color: #17312a;
+  overflow: auto;
+  scrollbar-color: #486c5d #152722;
+  scrollbar-width: thin;
+}
+
+html.dark-theme #map .gm-style-iw-d::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+html.dark-theme #map .gm-style-iw-d::-webkit-scrollbar-track,
+html.dark-theme #map .gm-style-iw-d::-webkit-scrollbar-corner {
+  background: #152722;
+}
+
+html.dark-theme #map .gm-style-iw-d::-webkit-scrollbar-thumb {
+  background: #486c5d;
+  border: 2px solid #152722;
+  border-radius: 8px;
+}
+
+html.dark-theme #map .gm-style-iw-tc::after {
+  background: #152722 !important;
+  box-shadow: -1px -1px 0 rgba(196, 235, 218, 0.2);
 }
 
 html.dark-theme #map .gm-ui-hover-effect {
-  filter: invert(1) hue-rotate(180deg) !important;
+  opacity: 0.85;
+}
+
+html.dark-theme #map .gm-ui-hover-effect > span {
+  background-color: #e2f0e9 !important;
 }
 
 @media (max-width: 900px) {
