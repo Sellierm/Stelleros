@@ -405,6 +405,69 @@ html.dark-theme .fields-filters select {
   background: rgba(15, 29, 25, 0.88);
 }
 
+html.dark-theme .fields-layout-toggle {
+  filter: invert(1) hue-rotate(180deg);
+  border-color: rgba(196, 235, 218, 0.42);
+  color: #f2fff8;
+  background: rgba(20, 52, 43, 0.96);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.42);
+}
+
+html.dark-theme .fields-layout-toggle:hover,
+html.dark-theme .fields-layout-toggle:focus-visible {
+  border-color: #8fe0bd;
+  color: #10251e;
+  background: #8fe0bd;
+}
+
+html.dark-theme #map .gm-style-iw,
+html.dark-theme #map .gm-style-iw-c,
+html.dark-theme #map .gm-style-iw-ch,
+html.dark-theme #map .gm-style-iw-d {
+  background: #152722 !important;
+  color: #e2f0e9 !important;
+}
+
+html.dark-theme #map .gm-style-iw-c {
+  border: 1px solid rgba(196, 235, 218, 0.2);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.42);
+}
+
+html.dark-theme #map .gm-style-iw-d {
+  overflow: auto;
+  scrollbar-color: #486c5d #152722;
+  scrollbar-width: thin;
+}
+
+html.dark-theme #map .gm-style-iw-d::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+html.dark-theme #map .gm-style-iw-d::-webkit-scrollbar-track,
+html.dark-theme #map .gm-style-iw-d::-webkit-scrollbar-corner {
+  background: #152722;
+}
+
+html.dark-theme #map .gm-style-iw-d::-webkit-scrollbar-thumb {
+  background: #486c5d;
+  border: 2px solid #152722;
+  border-radius: 8px;
+}
+
+html.dark-theme #map .gm-style-iw-tc::after {
+  background: #152722 !important;
+  box-shadow: -1px -1px 0 rgba(196, 235, 218, 0.2);
+}
+
+html.dark-theme #map .gm-ui-hover-effect {
+  opacity: 0.85;
+}
+
+html.dark-theme #map .gm-ui-hover-effect > span {
+  background-color: #e2f0e9 !important;
+}
+
 @media (max-width: 900px) {
   .fields-layout {
     grid-template-columns: 145px minmax(0, 1fr) 210px;
