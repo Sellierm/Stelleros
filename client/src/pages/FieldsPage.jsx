@@ -324,7 +324,7 @@ export default function FieldsPage() {
       pos.accuracy != null ? `${Number(pos.accuracy).toFixed(2)}m` : null;
 
     return `
-      <div style="padding:5px;min-width:200px">
+      <div class="tractor-info-window">
         <strong>Device ID:</strong> ${deviceId}<br/>
         <strong>Position:</strong> ${parseFloat(pos.latitude).toFixed(6)}, ${parseFloat(pos.longitude).toFixed(6)}<br/>
         ${pos.altitude != null ? `<strong>Altitude:</strong> ${Number(pos.altitude).toFixed(1)}m<br/>` : ""}
