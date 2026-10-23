@@ -10,12 +10,18 @@ import GpsPage from "./pages/GpsPage.jsx";
 import PhytoPage from "./pages/PhytoPage.jsx";
 
 export default function App() {
+  const homePage = import.meta.env.DEV ? (
+    <Navigate to="/forecast" replace />
+  ) : (
+    <LoginPage />
+  );
+
   return (
     <AuthProvider>
       <SocketProvider>
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<LoginPage />} />
+            <Route path="/" element={homePage} />
             <Route
               path="/forecast"
               element={
