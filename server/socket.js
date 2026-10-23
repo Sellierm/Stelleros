@@ -243,11 +243,14 @@ function initSocket(server) {
       const sencrop = require("./modules/sencropModule");
       const selectedDate = new Date(date);
       selectedDate.setUTCDate(selectedDate.getUTCDate() - 1);
-      const selectedDay = selectedDate.getUTCDay();
-      const daysSinceMonday = selectedDay === 0 ? 7 : selectedDay;
-      const rainUrl = `${sencrop.endPoint}/users/${sencrop.userId}/devices/${sencrop.raincropEarlId}/data/daily?beforeDate=${date}&days=${daysSinceMonday}&measures=RAIN_FALL&patched=true`;
-      const temperatureUrl = `${sencrop.endPoint}/users/${sencrop.userId}/devices/${sencrop.raincropEarlId}/data/hourly?beforeDate=${date}&days=${daysSinceMonday}&measures=TEMPERATURE&patched=true`;
-      const windUrl = `${sencrop.endPoint}/users/${sencrop.userId}/devices/${sencrop.windcropEarlId}/data/hourly?beforeDate=${date}&days=${daysSinceMonday}&measures=WIND_SPEED&patched=true`;
+      const summaryStart = new Date(selectedDate);
+      summaryStart.setUTCDate(summaryStart.getUTCDate() - 6);
+      const summaryStartTime = summaryStart.getTime();
+      const summaryEndTime = new Date(date).getTime();
+      const summaryDays = 7;
+      const rainUrl = `${sencrop.endPoint}/users/${sencrop.userId}/devices/${sencrop.raincropEarlId}/data/daily?beforeDate=${date}&days=${summaryDays}&measures=RAIN_FALL&patched=true`;
+      const temperatureUrl = `${sencrop.endPoint}/users/${sencrop.userId}/devices/${sencrop.raincropEarlId}/data/hourly?beforeDate=${date}&days=${summaryDays}&measures=TEMPERATURE&patched=true`;
+      const windUrl = `${sencrop.endPoint}/users/${sencrop.userId}/devices/${sencrop.windcropEarlId}/data/hourly?beforeDate=${date}&days=${summaryDays}&measures=WIND_SPEED&patched=true`;
 
       Promise.all([
         fetchSencropData(rainUrl),
@@ -262,14 +265,24 @@ function initSocket(server) {
             const value = row?.[key];
             return Number(value?.value ?? value);
           };
+          const isInSummaryWindow = (row) => {
+            const timestamp = Date.parse(row?.date);
+            return (
+              Number.isFinite(timestamp) &&
+              timestamp >= summaryStartTime &&
+              timestamp < summaryEndTime
+            );
+          };
           const rainfall = rainRows
+            .filter(isInSummaryWindow)
             .map((row) => numericValue(row, "RAIN_FALL"))
             .filter(Number.isFinite);
           const wind = windRows
+            .filter(isInSummaryWindow)
             .map((row) => numericValue(row, "WIND_SPEED"))
             .filter(Number.isFinite);
-          const temperatures = rainRows
-            .concat(temperatureRows)
+          const temperatures = temperatureRows
+            .filter(isInSummaryWindow)
             .map((row) => numericValue(row, "TEMPERATURE"))
             .filter(Number.isFinite);
 
