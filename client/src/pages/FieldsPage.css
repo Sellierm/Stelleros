@@ -83,6 +83,45 @@
   );
 }
 
+.tractor-info-window {
+  min-width: 200px;
+  padding: 5px;
+  color: #17312a;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.tractor-info-window strong {
+  color: #12614e;
+}
+
+html.dark-theme #map .gm-style .gm-style-iw-c {
+  background: #1b3029;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+html.dark-theme #map .gm-style .gm-style-iw-tc::after {
+  background: #1b3029;
+}
+
+html.dark-theme #map .gm-style .gm-style-iw-d {
+  color: #e2f0e9;
+  overflow: auto !important;
+}
+
+html.dark-theme #map .tractor-info-window {
+  color: #e2f0e9;
+}
+
+html.dark-theme #map .tractor-info-window strong {
+  color: #7ed7b5;
+}
+
+html.dark-theme #map .gm-style button[aria-label="Close"] {
+  opacity: 0.8;
+  filter: none !important;
+}
+
 #legend,
 #infoPanel {
   position: relative;
@@ -219,6 +258,20 @@
 .fields-layout-toggle:focus-visible {
   color: white;
   background: var(--fields-accent);
+}
+
+html.dark-theme .fields-layout-toggle {
+  filter: invert(1) hue-rotate(180deg);
+  color: #e2f0e9;
+  background: #1f3a32;
+  border-color: rgba(196, 235, 218, 0.22);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.32);
+}
+
+html.dark-theme .fields-layout-toggle:hover,
+html.dark-theme .fields-layout-toggle:focus-visible {
+  color: white;
+  background: #12614e;
 }
 
 #infoPanel > div {
