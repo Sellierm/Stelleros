@@ -79,6 +79,7 @@ export default function FieldsPage() {
   const fieldPolygonsRef = useRef([]);
   const fieldOverlaysRef = useRef([]);
   const trackPointsByDeviceRef = useRef({});
+  const historyRequestIdRef = useRef(0);
 
   useEffect(() => {
     fieldOverlaysRef.current.forEach(({ overlay, culture }) => {
@@ -199,9 +200,15 @@ export default function FieldsPage() {
     selectedDateRef.current = date;
     setCoverageResult(null);
     setCoverageError("");
-    if (mapInstanceRef.current)
-      loadPositionHistory(mapInstanceRef.current, date);
+    if (mapInstanceRef.current) {
+      void loadPositionHistory(mapInstanceRef.current, date);
+    }
   };
+
+  useEffect(() => {
+    if (!selectedDate || !mapInstanceRef.current) return;
+    void loadPositionHistory(mapInstanceRef.current, selectedDate);
+  }, [selectedDate]);
 
   useEffect(() => {
     if (socket && mapsKey) socket.emit("askPlan", year);
@@ -243,12 +250,17 @@ export default function FieldsPage() {
   };
 
   const loadPositionHistory = async (map, date = selectedDateRef.current) => {
+    if (!map || !date) return;
+
+    const requestId = ++historyRequestIdRef.current;
+
     try {
       const res = await fetch(
         `/api/positions-history?date=${encodeURIComponent(date)}`,
         { credentials: "include" },
       );
       const data = await res.json();
+      if (requestId !== historyRequestIdRef.current) return;
       if (!data.success || !map) return;
 
       // Vider les polylignes existantes
@@ -311,7 +323,9 @@ export default function FieldsPage() {
       setAvailableTrackDevices(Object.keys(trackPointsByDeviceRef.current));
       setGpsPositions((previous) => ({ ...previous, ...historicalPositions }));
     } catch (err) {
-      console.error("Error loading GPS history:", err);
+      if (requestId === historyRequestIdRef.current) {
+        console.error("Error loading GPS history:", err);
+      }
     }
   };
 
@@ -464,6 +478,9 @@ export default function FieldsPage() {
         tilt: 0,
       });
       mapInstanceRef.current = map;
+      if (selectedDateRef.current) {
+        void loadPositionHistory(map, selectedDateRef.current);
+      }
 
       const kmlLayer = new window.google.maps.KmlLayer(src, {
         suppressInfoWindows: true,
