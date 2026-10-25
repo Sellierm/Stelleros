@@ -458,6 +458,36 @@ html.dark-theme .fields-filters select {
   background: rgba(15, 29, 25, 0.88);
 }
 
+/* Le filtre global invert + hue-rotate du thème sombre dénature les couleurs
+   saturées (le jaune du blé devient brun) : la page Parcelles en est exclue
+   et s'appuie uniquement sur ses styles sombres explicites. */
+html.dark-theme:has(.fields-page) {
+  filter: none;
+  background-color: #13231f;
+}
+
+html.dark-theme:has(.fields-page)
+  :is(img, video, iframe, svg, header, #map, .fields-layout-toggle) {
+  filter: none;
+}
+
+html.dark-theme #mapCap {
+  background: #13231f;
+}
+
+html.dark-theme .fields-filters {
+  background: rgba(21, 39, 34, 0.78);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.32);
+}
+
+html.dark-theme #infoPanel > div {
+  border-bottom-color: rgba(196, 235, 218, 0.12);
+}
+
+html.dark-theme #legend .lin > div {
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+
 @media (max-width: 900px) {
   .fields-layout {
     grid-template-columns: 145px minmax(0, 1fr) 210px;
