@@ -113,10 +113,19 @@ async function getHistory(dayStart, dayEnd) {
     "SELECT device_id, latitude, longitude, altitude, accuracy, speed, heading, source, timestamp FROM gps_track WHERE timestamp >= ? AND timestamp < ? ORDER BY device_id, timestamp ASC",
     [dayStart, dayEnd],
   );
+  // Format compact : la trace ne transporte que [lat, lng, timestamp] par
+  // point, seul le dernier point garde toutes ses colonnes (fiche du tracteur).
   const positions = {};
   for (const row of rows) {
-    if (!positions[row.device_id]) positions[row.device_id] = [];
-    positions[row.device_id].push(row);
+    if (!positions[row.device_id]) {
+      positions[row.device_id] = { track: [], last: null };
+    }
+    positions[row.device_id].track.push([
+      Number(row.latitude),
+      Number(row.longitude),
+      Number(row.timestamp),
+    ]);
+    positions[row.device_id].last = row;
   }
   return positions;
 }

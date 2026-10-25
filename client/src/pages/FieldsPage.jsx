@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import Nav from "../components/Nav.jsx";
 import { useSocket } from "../contexts/SocketContext.jsx";
 import usePageMeta from "../hooks/usePageMeta.js";
-import { computeCoverageArea } from "../utils/coverageCalculator.js";
 import "./FieldsPage.css";
 
 const CROP_COLORS = {
@@ -32,6 +31,42 @@ const normalizeCultureName = (str) => {
   if (str.includes("colz")) return "Colza";
   if (str.includes("herb") || str.includes("prairie")) return "Herbe";
   return "N/A";
+};
+
+const parseKmlCoordinates = (coordinatesNode) => {
+  if (!coordinatesNode) return [];
+  return coordinatesNode.textContent
+    .trim()
+    .split(/\s+/)
+    .map((tuple) => {
+      const [lng, lat] = tuple.split(",").map(Number);
+      return { lat, lng };
+    })
+    .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+};
+
+// Pour l'affichage seulement : écarte les points à moins d'environ 1 m du
+// précédent (tracteur à l'arrêt, dérive GPS). Le calcul de surface garde tout.
+const DISPLAY_MIN_STEP_DEG = 1e-5;
+const simplifyDisplayPath = (path) => {
+  const simplified = [];
+  let previous = null;
+  for (const { lat, lng } of path) {
+    if (
+      previous &&
+      Math.abs(lat - previous.lat) < DISPLAY_MIN_STEP_DEG &&
+      Math.abs(lng - previous.lng) < DISPLAY_MIN_STEP_DEG * 1.5
+    ) {
+      continue;
+    }
+    previous = { lat, lng };
+    simplified.push(previous);
+  }
+  const last = path[path.length - 1];
+  if (previous.lat !== last.lat || previous.lng !== last.lng) {
+    simplified.push({ lat: last.lat, lng: last.lng });
+  }
+  return simplified;
 };
 
 const getFieldOverlayStyle = (culture, selectedCrop) => {
@@ -90,6 +125,10 @@ export default function FieldsPage() {
   const fieldOverlaysRef = useRef([]);
   const trackPointsByDeviceRef = useRef({});
   const historyRequestIdRef = useRef(0);
+  const coverageWorkerRef = useRef(null);
+  const historyCacheRef = useRef(new Map());
+
+  const selectedCropRef = useRef(selectedCrop);
 
   const selectedCropRef = useRef(selectedCrop);
 
@@ -205,13 +244,12 @@ export default function FieldsPage() {
   const changeDate = (date) => {
     setSelectedDate(date);
     selectedDateRef.current = date;
+    cancelCoverage();
     setCoverageResult(null);
     setCoverageError("");
-    if (mapInstanceRef.current) {
-      void loadPositionHistory(mapInstanceRef.current, date);
-    }
   };
 
+  // Seul point de chargement de l'historique lors d'un changement de date.
   useEffect(() => {
     if (!selectedDate || !mapInstanceRef.current) return;
     void loadPositionHistory(mapInstanceRef.current, selectedDate);
@@ -242,7 +280,7 @@ export default function FieldsPage() {
     if (!polylinesMapRef.current[deviceId]) {
       const polyline = new window.google.maps.Polyline({
         path: [newPos],
-        geodesic: true,
+        geodesic: false,
         strokeColor: getTrailColor(deviceId),
         strokeOpacity: 0.85,
         strokeWeight: 3,
@@ -256,68 +294,100 @@ export default function FieldsPage() {
     }
   };
 
+  const fetchPositionHistory = async (date) => {
+    const cached = historyCacheRef.current.get(date);
+    if (cached) return cached;
+
+    const res = await fetch(
+      `/api/positions-history?date=${encodeURIComponent(date)}`,
+      { credentials: "include" },
+    );
+    const data = await res.json();
+    if (!data.success) return null;
+
+    const historyByDevice = {};
+    for (const [deviceId, { track = [], last }] of Object.entries(
+      data.positions || {},
+    )) {
+      const path = track
+        .map(([lat, lng, t]) => ({ lat, lng, t }))
+        .filter(
+          (point) => Number.isFinite(point.lat) && Number.isFinite(point.lng),
+        );
+      if (path.length > 0) historyByDevice[deviceId] = { path, last };
+    }
+
+    // Les journées passées ne changent plus : on les garde en mémoire.
+    if (date < new Date().toISOString().slice(0, 10)) {
+      historyCacheRef.current.set(date, historyByDevice);
+    }
+    return historyByDevice;
+  };
+
+  // Réutilise le marqueur existant du tracteur plutôt que de le recréer.
+  const placeMarker = (map, deviceId, position, point) => {
+    const marker = markerByDeviceRef.current[deviceId];
+    if (!marker) {
+      createMarker(map, deviceId, position, point);
+      return;
+    }
+    marker.position = position;
+    marker.map = map;
+    infoWindowByDeviceRef.current[deviceId]?.setContent(
+      buildInfoWindowContent(deviceId, point),
+    );
+  };
+
+  const removeMarkersExcept = (deviceIds) => {
+    for (const [deviceId, marker] of Object.entries(
+      markerByDeviceRef.current,
+    )) {
+      if (deviceIds.has(deviceId)) continue;
+      marker.map = null;
+      infoWindowByDeviceRef.current[deviceId]?.close();
+      delete markerByDeviceRef.current[deviceId];
+      delete infoWindowByDeviceRef.current[deviceId];
+    }
+    gpsMarkersRef.current = gpsMarkersRef.current.filter((marker) =>
+      Object.values(markerByDeviceRef.current).includes(marker),
+    );
+  };
+
   const loadPositionHistory = async (map, date = selectedDateRef.current) => {
     if (!map || !date) return;
 
     const requestId = ++historyRequestIdRef.current;
 
     try {
-      const res = await fetch(
-        `/api/positions-history?date=${encodeURIComponent(date)}`,
-        { credentials: "include" },
-      );
-      const data = await res.json();
+      const historyByDevice = await fetchPositionHistory(date);
       if (requestId !== historyRequestIdRef.current) return;
-      if (!data.success || !map) return;
+      if (!historyByDevice || !map) return;
 
       // Vider les polylignes existantes
       gpsPolylinesRef.current.forEach((line) => line.setMap(null));
       gpsPolylinesRef.current = [];
       polylinesMapRef.current = {};
 
-      const historyByDevice = data.positions || {};
       trackPointsByDeviceRef.current = {};
-
-      gpsMarkersRef.current.forEach((marker) => marker.setMap(null));
-      gpsMarkersRef.current = [];
-      markerByDeviceRef.current = {};
-      infoWindowByDeviceRef.current = {};
+      removeMarkersExcept(new Set(Object.keys(historyByDevice)));
 
       const historicalPositions = {};
-      for (const deviceId of Object.keys(historyByDevice)) {
-        const rawSeries = Array.isArray(historyByDevice[deviceId])
-          ? historyByDevice[deviceId]
-          : [];
-
-        const path = rawSeries
-          .map((point) => ({
-            lat: Number(point.latitude),
-            lng: Number(point.longitude),
-          }))
-          .filter(
-            (point) => Number.isFinite(point.lat) && Number.isFinite(point.lng),
-          );
-
-        if (path.length < 1) continue;
+      for (const [deviceId, { path, last }] of Object.entries(
+        historyByDevice,
+      )) {
         trackPointsByDeviceRef.current[deviceId] = path;
 
-        const lastPoint = rawSeries[rawSeries.length - 1];
         const lastPosition = {
-          lat: Number(lastPoint.latitude),
-          lng: Number(lastPoint.longitude),
+          lat: path[path.length - 1].lat,
+          lng: path[path.length - 1].lng,
         };
-        if (
-          Number.isFinite(lastPosition.lat) &&
-          Number.isFinite(lastPosition.lng)
-        ) {
-          historicalPositions[deviceId] = lastPoint;
-          markerPositionsRef.current[deviceId] = lastPosition;
-          createMarker(map, deviceId, lastPosition, lastPoint);
-        }
+        historicalPositions[deviceId] = last;
+        markerPositionsRef.current[deviceId] = lastPosition;
+        placeMarker(map, deviceId, lastPosition, last);
 
         const polyline = new window.google.maps.Polyline({
-          path,
-          geodesic: true,
+          path: simplifyDisplayPath(path),
+          geodesic: false,
           strokeColor: getTrailColor(deviceId),
           strokeOpacity: 0.85,
           strokeWeight: 3,
@@ -379,7 +449,7 @@ export default function FieldsPage() {
 
     marker.addListener("click", () => {
       if (activeInfoWindowRef.current) activeInfoWindowRef.current.close();
-      infoWindow.open(map, marker);
+      infoWindow.open({ anchor: marker, map: marker.map });
       activeInfoWindowRef.current = infoWindow;
       activeDeviceIdRef.current = deviceId;
     });
@@ -485,9 +555,6 @@ export default function FieldsPage() {
         tilt: 0,
       });
       mapInstanceRef.current = map;
-      if (selectedDateRef.current) {
-        void loadPositionHistory(map, selectedDateRef.current);
-      }
 
       const loadKml = async () => {
         try {
@@ -551,21 +618,20 @@ export default function FieldsPage() {
               ).getElementsByTagName("coordinates")[0];
               if (!coordinatesNode) continue;
 
-              const points = coordinatesNode.textContent
-                .trim()
-                .split(/\s+/)
-                .map((tuple) => {
-                  const [lng, lat] = tuple.split(",").map(Number);
-                  return { lat, lng };
-                })
-                .filter(
-                  (point) =>
-                    Number.isFinite(point.lat) && Number.isFinite(point.lng),
-                );
+              const points = parseKmlCoordinates(coordinatesNode);
+              const holes = Array.from(
+                polygonNodes[p].getElementsByTagName("innerBoundaryIs"),
+              )
+                .map((inner) =>
+                  parseKmlCoordinates(
+                    inner.getElementsByTagName("coordinates")[0],
+                  ),
+                )
+                .filter((hole) => hole.length >= 3);
               if (points.length >= 3) {
-                fieldPolygons.push(points);
+                fieldPolygons.push({ outer: points, holes });
                 const overlay = new window.google.maps.Polygon({
-                  paths: points,
+                  paths: [points, ...holes],
                   map,
                   strokeColor: CROP_COLORS[cultureName] || "#ffffff",
                   fillColor: CROP_COLORS[cultureName] || "#ffffff",
@@ -604,7 +670,9 @@ export default function FieldsPage() {
           fieldPolygonsRef.current = fieldPolygons;
           if (fieldPolygons.length > 0) {
             const bounds = new window.google.maps.LatLngBounds();
-            fieldPolygons.flat().forEach((point) => bounds.extend(point));
+            fieldPolygons.forEach(({ outer }) =>
+              outer.forEach((point) => bounds.extend(point)),
+            );
             map.fitBounds(bounds);
           }
         } catch (error) {
@@ -683,6 +751,15 @@ export default function FieldsPage() {
     setImplementWidths((previous) => ({ ...previous, [deviceId]: value }));
   };
 
+  const cancelCoverage = () => {
+    if (!coverageWorkerRef.current) return;
+    coverageWorkerRef.current.terminate();
+    coverageWorkerRef.current = null;
+    setCalculatingCoverage(false);
+  };
+
+  useEffect(() => cancelCoverage, []); // eslint-disable-line
+
   const calculateCoverage = () => {
     setCoverageError("");
     setCoverageResult(null);
@@ -702,16 +779,33 @@ export default function FieldsPage() {
       widthM: getImplementWidth(deviceId),
     }));
 
+    cancelCoverage();
     setCalculatingCoverage(true);
-    try {
-      setCoverageResult(
-        computeCoverageArea(fieldPolygonsRef.current, tracksWithWidth),
-      );
-    } catch (error) {
-      setCoverageError(error.message || "Erreur de calcul");
-    } finally {
+    const worker = new Worker(
+      new URL("../utils/coverageWorker.js", import.meta.url),
+      { type: "module" },
+    );
+    coverageWorkerRef.current = worker;
+    const finish = () => {
+      worker.terminate();
+      if (coverageWorkerRef.current === worker) {
+        coverageWorkerRef.current = null;
+      }
       setCalculatingCoverage(false);
-    }
+    };
+    worker.onmessage = ({ data }) => {
+      if (data.error) setCoverageError(data.error);
+      else setCoverageResult(data.result);
+      finish();
+    };
+    worker.onerror = (event) => {
+      setCoverageError(event.message || "Erreur de calcul");
+      finish();
+    };
+    worker.postMessage({
+      fieldPolygons: fieldPolygonsRef.current,
+      tracks: tracksWithWidth,
+    });
   };
 
   return (
