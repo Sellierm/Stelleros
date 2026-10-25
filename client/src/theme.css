@@ -1,0 +1,157 @@
+/* Charte commune à toutes les pages, issue de la page Parcelles. */
+
+:root {
+  --app-ink: #17312a;
+  --app-muted: #6f837c;
+  --app-accent: #1e8f72;
+  --app-accent-dark: #12614e;
+  --app-accent-soft: rgba(30, 143, 114, 0.1);
+  --app-bg: #edf4ef;
+  --app-bg-glow: rgba(182, 231, 193, 0.32);
+  --app-panel: rgba(255, 255, 255, 0.84);
+  --app-panel-solid: #ffffff;
+  --app-panel-soft: rgba(255, 255, 255, 0.62);
+  --app-border: rgba(255, 255, 255, 0.78);
+  --app-line: rgba(23, 49, 42, 0.1);
+  --app-input-bg: rgba(247, 252, 249, 0.92);
+  --app-input-border: rgba(30, 143, 114, 0.2);
+  --app-shadow: 0 18px 48px rgba(39, 83, 67, 0.1);
+  --app-shadow-soft: 0 10px 28px rgba(39, 83, 67, 0.07);
+  --app-danger: #b5443a;
+  --app-warning: #a66b20;
+  --app-nav-bg: #17312a;
+  --app-nav-ink: #e2f0e9;
+  --app-nav-active: #7ed7b5;
+  --app-icon-filter: none;
+  color-scheme: light;
+}
+
+html.dark-theme {
+  --app-ink: #e2f0e9;
+  --app-muted: #9db5aa;
+  --app-accent: #2fa784;
+  --app-accent-dark: #1e8f72;
+  --app-accent-soft: rgba(126, 215, 181, 0.12);
+  --app-bg: #13231f;
+  --app-bg-glow: rgba(47, 167, 132, 0.12);
+  --app-panel: rgba(21, 39, 34, 0.88);
+  --app-panel-solid: #1b3029;
+  --app-panel-soft: rgba(15, 29, 25, 0.6);
+  --app-border: rgba(196, 235, 218, 0.14);
+  --app-line: rgba(196, 235, 218, 0.12);
+  --app-input-bg: rgba(15, 29, 25, 0.88);
+  --app-input-border: rgba(196, 235, 218, 0.18);
+  --app-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+  --app-shadow-soft: 0 10px 28px rgba(0, 0, 0, 0.24);
+  --app-danger: #e2867c;
+  --app-warning: #e0b06a;
+  --app-nav-bg: #0d1a17;
+  --app-icon-filter: invert(1);
+  color-scheme: dark;
+}
+
+html,
+body {
+  color: var(--app-ink);
+  background: var(--app-bg);
+}
+
+/* Icônes monochromes noires du dossier /assets, inversées en thème sombre. */
+.app-mono-icon {
+  filter: var(--app-icon-filter);
+}
+
+/* Fond de page commun */
+.app-page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  color: var(--app-ink);
+  background:
+    radial-gradient(circle at 10% 12%, var(--app-bg-glow), transparent 30%),
+    var(--app-bg);
+}
+
+/* Petit titre en capitales, comme les intitulés de panneaux de Parcelles */
+.app-kicker {
+  color: var(--app-accent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* Panneau translucide */
+.app-card {
+  box-sizing: border-box;
+  border: 1px solid var(--app-border);
+  border-radius: 22px;
+  background: var(--app-panel);
+  box-shadow: var(--app-shadow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.app-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 11px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
+}
+
+.app-btn-primary {
+  color: #fff;
+  background: var(--app-accent);
+  box-shadow: 0 8px 16px rgba(30, 143, 114, 0.22);
+}
+
+.app-btn-primary:hover:not(:disabled) {
+  background: var(--app-accent-dark);
+  transform: translateY(-1px);
+}
+
+.app-btn-ghost {
+  color: var(--app-ink);
+  background: var(--app-accent-soft);
+}
+
+.app-btn-ghost:hover:not(:disabled) {
+  background: rgba(30, 143, 114, 0.18);
+}
+
+.app-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.app-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 11px;
+  border: 1px solid var(--app-input-border);
+  border-radius: 11px;
+  color: var(--app-ink);
+  background: var(--app-input-bg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.app-input:focus {
+  outline: none;
+  border-color: var(--app-accent);
+  box-shadow: 0 0 0 3px rgba(30, 143, 114, 0.16);
+}
