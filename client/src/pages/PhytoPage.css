@@ -92,16 +92,31 @@
 
 .pp-toolbar {
   display: flex;
-  gap: 8px;
-  padding: 12px 14px 0;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 16px 2px;
 }
 
-.pp-toolbar-search {
-  flex: 1;
+.phyto-page .pp-toolbar .app-input {
+  min-height: 44px;
+  font-size: 14px;
 }
 
-.pp-toolbar-select {
+.phyto-page .pp-toolbar-search {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding-left: 40px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%231e8f72' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 14px center;
+  background-size: 16px;
+}
+
+.phyto-page .pp-toolbar-select {
+  flex: 0 1 180px;
   width: auto;
+  min-width: 140px;
   cursor: pointer;
 }
 
