@@ -5,6 +5,7 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const { data, isPending } = authClient.useSession();
+  const devBypassAuth = import.meta.env.DEV;
 
   const login = async (user, password) => {
     const { error } = await authClient.signIn.username({
@@ -27,9 +28,9 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider
       value={{
-        authenticated: !!data?.user,
+        authenticated: devBypassAuth || !!data?.user,
         username: data?.user?.username || "",
-        loading: isPending,
+        loading: devBypassAuth ? false : isPending,
         csrfToken: "",
         refreshCsrfToken: async () => "",
         login,

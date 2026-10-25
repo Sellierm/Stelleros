@@ -10,6 +10,44 @@ const {
   getHistoryDates,
 } = require("../locationStore");
 
+const PARIS_TIME_ZONE = "Europe/Paris";
+const parisDateFormatter = new Intl.DateTimeFormat("en-US", {
+  timeZone: PARIS_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
+
+function getParisOffsetMs(timestamp) {
+  const parts = Object.fromEntries(
+    parisDateFormatter
+      .formatToParts(new Date(timestamp))
+      .filter(({ type }) => type !== "literal")
+      .map(({ type, value }) => [type, value]),
+  );
+  const parisAsUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second),
+  );
+  return parisAsUtc - timestamp;
+}
+
+function parisDateToTimestamp(dateParam) {
+  const [year, month, day] = dateParam.split("-").map(Number);
+  const utcGuess = Date.UTC(year, month - 1, day);
+  const firstOffset = getParisOffsetMs(utcGuess);
+  const timestamp = utcGuess - firstOffset;
+  return timestamp - (getParisOffsetMs(timestamp) - firstOffset);
+}
+
 function fmtPoint(point) {
   return `device=${point.device_id} lat=${Number(point.latitude).toFixed(6)} lon=${Number(point.longitude).toFixed(6)} source=${point.source}`;
 }
@@ -101,11 +139,13 @@ function createGpsRouter(io) {
       return res.status(400).json({ success: false, message: "Invalid date" });
     }
 
-    const dayStart = new Date(`${dateParam}T00:00:00`).getTime();
+    const dayStart = parisDateToTimestamp(dateParam);
     if (!Number.isFinite(dayStart)) {
       return res.status(400).json({ success: false, message: "Invalid date" });
     }
-    const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+    const nextDate = new Date(`${dateParam}T00:00:00Z`);
+    nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+    const dayEnd = parisDateToTimestamp(nextDate.toISOString().slice(0, 10));
 
     try {
       const positions = await getHistory(dayStart, dayEnd);
