@@ -236,72 +236,68 @@ function initSocket(server) {
       });
     });
 
-    socket.on("askWeatherSummary", (startDate) => {
-      const date = sanitizeDate(startDate);
-      if (!date) return;
+    // Résumé météo : chaque fenêtre [début, fin[ est calculée côté client en
+    // minuits locaux (gère les changements d'heure), puis les valeurs horaires
+    // sont filtrées sur cette fenêtre exacte.
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    function sanitizeWindow(value) {
+      if (!Array.isArray(value) || value.length !== 2) return null;
+      const [start, end] = value.map(sanitizeDate);
+      if (!start || !end) return null;
+      const startTime = Date.parse(start);
+      const endTime = Date.parse(end);
+      if (!(startTime < endTime) || endTime - startTime > 8 * DAY_MS) return null;
+      return { end, startTime, endTime };
+    }
+
+    function fetchHourlyValues(deviceId, measure, window) {
+      const sencrop = require("./modules/sencropModule");
+      const days = Math.ceil((window.endTime - window.startTime) / DAY_MS) + 1;
+      const url = `${sencrop.endPoint}/users/${sencrop.userId}/devices/${deviceId}/data/hourly?beforeDate=${window.end}&days=${days}&measures=${measure}&patched=true`;
+      return fetchSencropData(url).then((result) =>
+        (result?.measures?.data || [])
+          .filter((row) => {
+            const timestamp = Date.parse(row?.date);
+            return timestamp >= window.startTime && timestamp < window.endTime;
+          })
+          .map((row) => Number(row?.[measure]?.value ?? row?.[measure]))
+          .filter(Number.isFinite),
+      );
+    }
+
+    const average = (values) =>
+      values.length > 0
+        ? values.reduce((sum, value) => sum + value, 0) / values.length
+        : null;
+
+    socket.on("askWeatherSummary", (request) => {
+      const requestId = request?.requestId;
+      const rainWindow = sanitizeWindow(request?.rain);
+      const temperatureWindow = sanitizeWindow(request?.temperature);
+      const windWindow = sanitizeWindow(request?.wind);
+      if (!rainWindow || !temperatureWindow || !windWindow) return;
 
       const sencrop = require("./modules/sencropModule");
-      const selectedDate = new Date(date);
-      selectedDate.setUTCDate(selectedDate.getUTCDate() - 1);
-      const summaryStart = new Date(selectedDate);
-      summaryStart.setUTCDate(summaryStart.getUTCDate() - 6);
-      const summaryStartTime = summaryStart.getTime();
-      const summaryEndTime = new Date(date).getTime();
-      const summaryDays = 7;
-      const rainUrl = `${sencrop.endPoint}/users/${sencrop.userId}/devices/${sencrop.raincropEarlId}/data/daily?beforeDate=${date}&days=${summaryDays}&measures=RAIN_FALL&patched=true`;
-      const temperatureUrl = `${sencrop.endPoint}/users/${sencrop.userId}/devices/${sencrop.raincropEarlId}/data/hourly?beforeDate=${date}&days=${summaryDays}&measures=TEMPERATURE&patched=true`;
-      const windUrl = `${sencrop.endPoint}/users/${sencrop.userId}/devices/${sencrop.windcropEarlId}/data/hourly?beforeDate=${date}&days=${summaryDays}&measures=WIND_SPEED&patched=true`;
-
       Promise.all([
-        fetchSencropData(rainUrl),
-        fetchSencropData(temperatureUrl),
-        fetchSencropData(windUrl),
+        fetchHourlyValues(sencrop.raincropEarlId, "RAIN_FALL", rainWindow),
+        fetchHourlyValues(sencrop.raincropEarlId, "TEMPERATURE", temperatureWindow),
+        fetchHourlyValues(sencrop.windcropEarlId, "WIND_SPEED", windWindow),
       ])
-        .then(([rainResult, temperatureResult, windResult]) => {
-          const rainRows = rainResult?.measures?.data || [];
-          const temperatureRows = temperatureResult?.measures?.data || [];
-          const windRows = windResult?.measures?.data || [];
-          const numericValue = (row, key) => {
-            const value = row?.[key];
-            return Number(value?.value ?? value);
-          };
-          const isInSummaryWindow = (row) => {
-            const timestamp = Date.parse(row?.date);
-            return (
-              Number.isFinite(timestamp) &&
-              timestamp >= summaryStartTime &&
-              timestamp < summaryEndTime
-            );
-          };
-          const rainfall = rainRows
-            .filter(isInSummaryWindow)
-            .map((row) => numericValue(row, "RAIN_FALL"))
-            .filter(Number.isFinite);
-          const wind = windRows
-            .filter(isInSummaryWindow)
-            .map((row) => numericValue(row, "WIND_SPEED"))
-            .filter(Number.isFinite);
-          const temperatures = temperatureRows
-            .filter(isInSummaryWindow)
-            .map((row) => numericValue(row, "TEMPERATURE"))
-            .filter(Number.isFinite);
-
+        .then(([rainfall, temperatures, wind]) => {
           socket.emit("getWeatherSummary", {
-            rainfallMm: rainfall.reduce((sum, value) => sum + value, 0),
-            averageTemperature:
-              temperatures.length > 0
-                ? temperatures.reduce((sum, value) => sum + value, 0) /
-                  temperatures.length
+            requestId,
+            rainfallMm:
+              rainfall.length > 0
+                ? rainfall.reduce((sum, value) => sum + value, 0)
                 : null,
-            averageWind:
-              wind.length > 0
-                ? wind.reduce((sum, value) => sum + value, 0) / wind.length
-                : null,
+            averageTemperature: average(temperatures),
+            averageWind: average(wind),
           });
         })
         .catch((error) => {
           console.error("Erreur résumé météo Sencrop:", error);
-          socket.emit("getWeatherSummary", null);
+          socket.emit("getWeatherSummary", { requestId });
         });
     });
 

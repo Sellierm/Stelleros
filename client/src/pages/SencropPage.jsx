@@ -12,6 +12,20 @@ function toDateInputValue(date) {
 
 const today = toDateInputValue(new Date());
 
+// [début, fin[ en minuits locaux couvrant `days` jours jusqu'à `value` inclus.
+function localDayWindow(value, days) {
+  const start = new Date(`${value}T00:00:00`);
+  start.setDate(start.getDate() - (days - 1));
+  const end = new Date(`${value}T00:00:00`);
+  end.setDate(end.getDate() + 1);
+  return [start.toISOString(), end.toISOString()];
+}
+
+function formatShortDate(value) {
+  const [, month, day] = value.split("-");
+  return `${day}/${month}`;
+}
+
 export default function SencropPage() {
   const socket = useSocket();
   const chart1Ref = useRef(null);
@@ -20,6 +34,7 @@ export default function SencropPage() {
   const chartInst2 = useRef(null);
   const day1Ref = useRef(today);
   const day2Ref = useRef(today);
+  const summaryRequestRef = useRef(0);
 
   const [loading1, setLoading1] = useState(false);
   const [loading2, setLoading2] = useState(false);
@@ -86,12 +101,18 @@ export default function SencropPage() {
     else socket.emit("askDataW2", askedDay.toISOString(), dt);
   };
 
-  const emitWeatherSummary = (date = day1) => {
+  // Pluie : 7 jours jusqu'à la date Raincrop incluse. Température : moyenne
+  // de la date Raincrop. Vent : moyenne de la date Windcrop.
+  const emitWeatherSummary = (rainDay = day1, windDay = day2) => {
     if (!socket) return;
-    const requestedDate = new Date(date);
-    requestedDate.setHours(0, 0, 0, 0);
-    requestedDate.setDate(requestedDate.getDate() + 1);
-    socket.emit("askWeatherSummary", requestedDate.toISOString());
+    summaryRequestRef.current += 1;
+    setWeatherSummary(null);
+    socket.emit("askWeatherSummary", {
+      requestId: summaryRequestRef.current,
+      rain: localDayWindow(rainDay, 7),
+      temperature: localDayWindow(rainDay, 1),
+      wind: localDayWindow(windDay, 1),
+    });
   };
 
   // ── Socket listeners ────────────────────────────────────────────────────────
@@ -369,6 +390,8 @@ export default function SencropPage() {
     });
 
     socket.on("getWeatherSummary", (summary) => {
+      // Ignore une réponse arrivée après un changement de date plus récent.
+      if (summary?.requestId !== summaryRequestRef.current) return;
       setWeatherSummary(summary);
     });
 
@@ -486,7 +509,7 @@ export default function SencropPage() {
 
         <section
           className="sencrop-summary"
-          aria-label="Résumé météo des sept derniers jours"
+          aria-label="Résumé météo"
         >
           <article className="sencrop-summary-card">
             <span className="sencrop-summary-icon">雨</span>
@@ -502,7 +525,7 @@ export default function SencropPage() {
           <article className="sencrop-summary-card">
             <span className="sencrop-summary-icon">°C</span>
             <div>
-              <span>Température moyenne</span>
+              <span>Température moyenne · {formatShortDate(day1)}</span>
               <strong>
                 {weatherSummary?.averageTemperature != null
                   ? `${weatherSummary.averageTemperature.toFixed(1)} °C`
@@ -513,7 +536,7 @@ export default function SencropPage() {
           <article className="sencrop-summary-card">
             <span className="sencrop-summary-icon">↝</span>
             <div>
-              <span>Vent moyen</span>
+              <span>Vent moyen · {formatShortDate(day2)}</span>
               <strong>
                 {weatherSummary?.averageWind != null
                   ? `${weatherSummary.averageWind.toFixed(1)} km/h`
@@ -625,7 +648,7 @@ export default function SencropPage() {
               onChange={(e) => {
                 setDay1(e.target.value);
                 emitR(e.target.value, data1, freq1);
-                emitWeatherSummary(e.target.value);
+                emitWeatherSummary(e.target.value, day2);
               }}
             />
           </div>
@@ -647,6 +670,7 @@ export default function SencropPage() {
               onChange={(e) => {
                 setDay2(e.target.value);
                 emitW(e.target.value, data2, freq2);
+                emitWeatherSummary(day1, e.target.value);
               }}
             />
           </div>
