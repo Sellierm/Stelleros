@@ -21,6 +21,14 @@ function fmtDate(value) {
   return new Date(value).toLocaleDateString("fr-FR");
 }
 
+// Minuscules sans accents ; tolère les valeurs nulles venant de la base.
+function normalizeSearch(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase();
+}
+
 function categoryClass(category) {
   return `pp-badge pp-badge-${String(category || "autre")
     .toLowerCase()
@@ -542,12 +550,13 @@ export default function PhytoPage() {
 
   const filteredProducts = useMemo(() => {
     let filtered = products;
-    if (searchProducts.trim()) {
-      const query = searchProducts.toLowerCase();
+    const query = normalizeSearch(searchProducts.trim());
+    if (query) {
       filtered = filtered.filter(
         (p) =>
-          p.name.toLowerCase().includes(query) ||
-          p.category.toLowerCase().includes(query),
+          normalizeSearch(p.name).includes(query) ||
+          normalizeSearch(p.category).includes(query) ||
+          normalizeSearch(p.notes).includes(query),
       );
     }
     const sorted = [...filtered];
@@ -573,18 +582,16 @@ export default function PhytoPage() {
 
   const filteredApplications = useMemo(() => {
     let filtered = applications;
-    if (searchApplications.trim()) {
-      const query = searchApplications.toLowerCase();
+    const query = normalizeSearch(searchApplications.trim());
+    if (query) {
       filtered = filtered.filter((app) => {
-        const dateStr = fmtDate(app.date).toLowerCase();
-        const productNames = app.products
-          ?.map((p) => p.product_name?.toLowerCase() || "")
+        const productNames = (app.products || [])
+          .map((p) => p?.product_name)
           .join(" ");
-        const notes = app.notes?.toLowerCase() || "";
         return (
-          dateStr.includes(query) ||
-          productNames.includes(query) ||
-          notes.includes(query)
+          normalizeSearch(fmtDate(app.date)).includes(query) ||
+          normalizeSearch(productNames).includes(query) ||
+          normalizeSearch(app.notes).includes(query)
         );
       });
     }
