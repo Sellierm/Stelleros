@@ -130,8 +130,6 @@ export default function FieldsPage() {
 
   const selectedCropRef = useRef(selectedCrop);
 
-  const selectedCropRef = useRef(selectedCrop);
-
   useEffect(() => {
     selectedCropRef.current = selectedCrop;
     fieldOverlaysRef.current.forEach(({ overlay, culture }) => {
