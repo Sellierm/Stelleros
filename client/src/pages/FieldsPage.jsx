@@ -85,8 +85,8 @@ export default function FieldsPage() {
     fieldOverlaysRef.current.forEach(({ overlay, culture }) => {
       const isSelected = selectedCrop && culture === selectedCrop;
       overlay.setOptions({
-        fillOpacity: selectedCrop ? (isSelected ? 0.38 : 0.04) : 0,
-        strokeOpacity: selectedCrop ? (isSelected ? 0.95 : 0.18) : 0,
+        fillOpacity: selectedCrop ? (isSelected ? 0.38 : 0.04) : 0.18,
+        strokeOpacity: selectedCrop ? (isSelected ? 0.95 : 0.18) : 0.5,
         strokeWeight: isSelected ? 3 : 1,
         zIndex: isSelected ? 2 : 1,
       });
@@ -482,58 +482,20 @@ export default function FieldsPage() {
         void loadPositionHistory(map, selectedDateRef.current);
       }
 
-      const kmlLayer = new window.google.maps.KmlLayer(src, {
-        suppressInfoWindows: true,
-        preserveViewport: true,
-        map,
-      });
-
-      kmlLayer.addListener("click", (event) => {
-        const content = event.featureData.description || "";
-        const dataTab = [];
-        let j = 0;
-        dataTab[0] = "";
-        for (let i = 0; i < content.length; i++) {
-          if (content[i] === "<") {
-            j += 1;
-            i += 3;
-            dataTab[j] = "";
-          } else {
-            dataTab[j] += content[i];
+      const loadKml = async () => {
+        try {
+          const response = await fetch(src);
+          if (!response.ok) {
+            throw new Error(`KML request failed with HTTP ${response.status}`);
           }
-        }
-        const infos = [];
-        let inc = 0;
-        for (let i in dataTab) {
-          const idx = dataTab[i].indexOf(":");
-          if (idx + 1 !== dataTab[i].length) {
-            infos[inc++] =
-              dataTab[i].slice(0, idx) + " " + dataTab[i].slice(idx);
-          }
-        }
-        setMapInfo([infos[0] || "", infos[1] || ""]);
 
-        // Auto-select crop when clicking on a specific field
-        const plainText = content.replace(/<[^>]+>/g, "\n");
-        const mC = plainText.match(/Culture\s*:\s*([^\n]+)/i);
-        if (mC) {
-          const cName = normalizeCultureName(mC[1].trim());
-          if (cName !== "N/A") {
-            setSelectedCrop(cName);
+          const kmlText = await response.text();
+          const kmlDoc = new DOMParser().parseFromString(kmlText, "text/xml");
+          if (kmlDoc.querySelector("parsererror")) {
+            throw new Error("Invalid KML document");
           }
-        }
-      });
 
-      window.google.maps.event.addListenerOnce(
-        kmlLayer,
-        "defaultviewport_changed",
-        () => {
-          const parser = new DOMParser();
-          fetch(src)
-            .then((r) => r.text())
-            .then((kmlText) => {
-              const kmlDoc = parser.parseFromString(kmlText, "text/xml");
-              const placemarks = kmlDoc.getElementsByTagName("Placemark");
+          const placemarks = kmlDoc.getElementsByTagName("Placemark");
 
               let total = 0;
               let cTotals = {};
@@ -604,8 +566,25 @@ export default function FieldsPage() {
                       strokeWeight: 1,
                       fillColor: CROP_COLORS[cultureName] || "#ffffff",
                       fillOpacity: 0,
-                      clickable: false,
+                      clickable: true,
                       zIndex: 1,
+                    });
+                    overlay.addListener("click", () => {
+                      const content = desc?.textContent || "";
+                      const lines = content
+                        .replace(/<[^>]+>/g, "\n")
+                        .split(/\r?\n/)
+                        .map((line) => line.trim())
+                        .filter(Boolean);
+                      const infos = lines
+                        .filter((line) => line.includes(":"))
+                        .slice(0, 2)
+                        .map((line) => {
+                          const index = line.indexOf(":");
+                          return `${line.slice(0, index)} ${line.slice(index)}`;
+                        });
+                      setMapInfo([infos[0] || "", infos[1] || ""]);
+                      if (cultureName !== "N/A") setSelectedCrop(cultureName);
                     });
                     fieldOverlaysRef.current.push({
                       overlay,
@@ -620,9 +599,17 @@ export default function FieldsPage() {
               setTotalHa(total.toFixed(2));
               setCropTotals(cTotals);
               fieldPolygonsRef.current = fieldPolygons;
-            });
-        },
-      );
+              if (fieldPolygons.length > 0) {
+                const bounds = new window.google.maps.LatLngBounds();
+                fieldPolygons.flat().forEach((point) => bounds.extend(point));
+                map.fitBounds(bounds);
+              }
+        } catch (error) {
+          console.error("Error loading KML layer:", error);
+        }
+      };
+
+      void loadKml();
 
       // ── Chargement initial conditionné à l'année courante ──────────────
       const isCurrentYear = yearRef.current === new Date().getFullYear();
