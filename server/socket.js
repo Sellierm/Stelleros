@@ -248,22 +248,43 @@ function initSocket(server) {
       const startTime = Date.parse(start);
       const endTime = Date.parse(end);
       if (!(startTime < endTime) || endTime - startTime > 8 * DAY_MS) return null;
-      return { end, startTime, endTime };
+      return { startTime, endTime };
     }
 
-    function fetchHourlyValues(deviceId, measure, window) {
+    // L'API horaire refuse plus de 7 jours par requête (HTTP 400) : la fenêtre
+    // est découpée en tranches de 7 jours en remontant depuis la fin. Chaque
+    // ligne est horodatée par `key` (ms epoch), dédoublonnée entre tranches.
+    const MAX_HOURLY_DAYS = 7;
+
+    async function fetchHourlyValues(deviceId, measure, window) {
       const sencrop = require("./modules/sencropModule");
-      const days = Math.ceil((window.endTime - window.startTime) / DAY_MS) + 1;
-      const url = `${sencrop.endPoint}/users/${sencrop.userId}/devices/${deviceId}/data/hourly?beforeDate=${window.end}&days=${days}&measures=${measure}&patched=true`;
-      return fetchSencropData(url).then((result) =>
-        (result?.measures?.data || [])
-          .filter((row) => {
-            const timestamp = Date.parse(row?.date);
-            return timestamp >= window.startTime && timestamp < window.endTime;
-          })
-          .map((row) => Number(row?.[measure]?.value ?? row?.[measure]))
-          .filter(Number.isFinite),
-      );
+      const rowsByTime = new Map();
+
+      for (
+        let chunkEnd = window.endTime;
+        chunkEnd > window.startTime;
+        chunkEnd -= MAX_HOURLY_DAYS * DAY_MS
+      ) {
+        const days = Math.min(
+          MAX_HOURLY_DAYS,
+          Math.ceil((chunkEnd - window.startTime) / DAY_MS),
+        );
+        const beforeDate = new Date(chunkEnd).toISOString();
+        const url = `${sencrop.endPoint}/users/${sencrop.userId}/devices/${deviceId}/data/hourly?beforeDate=${beforeDate}&days=${days}&measures=${measure}&patched=true`;
+        const result = await fetchSencropData(url);
+        if (!result?.measures) throw new Error(`Sencrop ${measure} indisponible`);
+
+        for (const row of result.measures.data || []) {
+          const timestamp = Number(row?.key ?? Date.parse(row?.date));
+          if (timestamp >= window.startTime && timestamp < window.endTime) {
+            rowsByTime.set(timestamp, row);
+          }
+        }
+      }
+
+      return [...rowsByTime.values()]
+        .map((row) => Number(row?.[measure]?.value))
+        .filter(Number.isFinite);
     }
 
     const average = (values) =>
