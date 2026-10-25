@@ -34,6 +34,16 @@ const normalizeCultureName = (str) => {
   return "N/A";
 };
 
+const getFieldOverlayStyle = (culture, selectedCrop) => {
+  const isSelected = selectedCrop && culture === selectedCrop;
+  return {
+    fillOpacity: selectedCrop ? (isSelected ? 0.75 : 0.3) : 0.5,
+    strokeOpacity: 1,
+    strokeWeight: isSelected ? 3 : 1,
+    zIndex: isSelected ? 2 : 1,
+  };
+};
+
 export default function FieldsPage() {
   const socket = useSocket();
   const mapRef = useRef(null);
@@ -81,15 +91,12 @@ export default function FieldsPage() {
   const trackPointsByDeviceRef = useRef({});
   const historyRequestIdRef = useRef(0);
 
+  const selectedCropRef = useRef(selectedCrop);
+
   useEffect(() => {
+    selectedCropRef.current = selectedCrop;
     fieldOverlaysRef.current.forEach(({ overlay, culture }) => {
-      const isSelected = selectedCrop && culture === selectedCrop;
-      overlay.setOptions({
-        fillOpacity: selectedCrop ? (isSelected ? 0.38 : 0.04) : 0.18,
-        strokeOpacity: selectedCrop ? (isSelected ? 0.95 : 0.18) : 0.5,
-        strokeWeight: isSelected ? 3 : 1,
-        zIndex: isSelected ? 2 : 1,
-      });
+      overlay.setOptions(getFieldOverlayStyle(culture, selectedCrop));
     });
   }, [selectedCrop]);
 
@@ -497,113 +504,109 @@ export default function FieldsPage() {
 
           const placemarks = kmlDoc.getElementsByTagName("Placemark");
 
-              let total = 0;
-              let cTotals = {};
-              const fieldPolygons = [];
-              fieldOverlaysRef.current.forEach(({ overlay }) => overlay.setMap(null));
-              fieldOverlaysRef.current = [];
+          let total = 0;
+          let cTotals = {};
+          const fieldPolygons = [];
+          fieldOverlaysRef.current.forEach(({ overlay }) =>
+            overlay.setMap(null),
+          );
+          fieldOverlaysRef.current = [];
 
-              for (let i = 0; i < placemarks.length; i++) {
-                let surface = 0;
-                let cultureStr = "";
+          for (let i = 0; i < placemarks.length; i++) {
+            let surface = 0;
+            let cultureStr = "";
 
-                const desc =
-                  placemarks[i].getElementsByTagName("description")[0];
-                if (desc) {
-                  const m = desc.textContent.match(
-                    /Surface\s*\(Ha\)\s*:\s*([\d.,]+)/i,
-                  );
-                  if (m) {
-                    surface = Number.parseFloat(m[1].replace(",", "."));
-                  }
-                }
-
-                const extendedData = placemarks[i].getElementsByTagName("Data");
-                for (let j = 0; j < extendedData.length; j++) {
-                  if (extendedData[j].getAttribute("name") === "Culture") {
-                    const valueTag =
-                      extendedData[j].getElementsByTagName("value")[0];
-                    if (valueTag) cultureStr = valueTag.textContent;
-                  }
-                }
-
-                if (!cultureStr && desc) {
-                  const plainDesc = desc.textContent.replace(/<[^>]+>/g, "\n");
-                  const mC = plainDesc.match(/Culture\s*:\s*([^\n]+)/i);
-                  if (mC) cultureStr = mC[1].trim();
-                }
-
-                const cultureName = normalizeCultureName(cultureStr);
-                const polygonNodes =
-                  placemarks[i].getElementsByTagName("Polygon");
-                for (let p = 0; p < polygonNodes.length; p++) {
-                  const outerBoundary =
-                    polygonNodes[p].getElementsByTagName("outerBoundaryIs")[0];
-                  const coordinatesNode = (
-                    outerBoundary || polygonNodes[p]
-                  ).getElementsByTagName("coordinates")[0];
-                  if (!coordinatesNode) continue;
-
-                  const points = coordinatesNode.textContent
-                    .trim()
-                    .split(/\s+/)
-                    .map((tuple) => {
-                      const [lng, lat] = tuple.split(",").map(Number);
-                      return { lat, lng };
-                    })
-                    .filter(
-                      (point) =>
-                        Number.isFinite(point.lat) &&
-                        Number.isFinite(point.lng),
-                    );
-                  if (points.length >= 3) {
-                    fieldPolygons.push(points);
-                    const overlay = new window.google.maps.Polygon({
-                      paths: points,
-                      map,
-                      strokeColor: CROP_COLORS[cultureName] || "#ffffff",
-                      strokeOpacity: 0,
-                      strokeWeight: 1,
-                      fillColor: CROP_COLORS[cultureName] || "#ffffff",
-                      fillOpacity: 0,
-                      clickable: true,
-                      zIndex: 1,
-                    });
-                    overlay.addListener("click", () => {
-                      const content = desc?.textContent || "";
-                      const lines = content
-                        .replace(/<[^>]+>/g, "\n")
-                        .split(/\r?\n/)
-                        .map((line) => line.trim())
-                        .filter(Boolean);
-                      const infos = lines
-                        .filter((line) => line.includes(":"))
-                        .slice(0, 2)
-                        .map((line) => {
-                          const index = line.indexOf(":");
-                          return `${line.slice(0, index)} ${line.slice(index)}`;
-                        });
-                      setMapInfo([infos[0] || "", infos[1] || ""]);
-                      if (cultureName !== "N/A") setSelectedCrop(cultureName);
-                    });
-                    fieldOverlaysRef.current.push({
-                      overlay,
-                      culture: cultureName,
-                    });
-                  }
-                }
-
-                cTotals[cultureName] = (cTotals[cultureName] || 0) + surface;
-                total += surface;
+            const desc = placemarks[i].getElementsByTagName("description")[0];
+            if (desc) {
+              const m = desc.textContent.match(
+                /Surface\s*\(Ha\)\s*:\s*([\d.,]+)/i,
+              );
+              if (m) {
+                surface = Number.parseFloat(m[1].replace(",", "."));
               }
-              setTotalHa(total.toFixed(2));
-              setCropTotals(cTotals);
-              fieldPolygonsRef.current = fieldPolygons;
-              if (fieldPolygons.length > 0) {
-                const bounds = new window.google.maps.LatLngBounds();
-                fieldPolygons.flat().forEach((point) => bounds.extend(point));
-                map.fitBounds(bounds);
+            }
+
+            const extendedData = placemarks[i].getElementsByTagName("Data");
+            for (let j = 0; j < extendedData.length; j++) {
+              if (extendedData[j].getAttribute("name") === "Culture") {
+                const valueTag =
+                  extendedData[j].getElementsByTagName("value")[0];
+                if (valueTag) cultureStr = valueTag.textContent;
               }
+            }
+
+            if (!cultureStr && desc) {
+              const plainDesc = desc.textContent.replace(/<[^>]+>/g, "\n");
+              const mC = plainDesc.match(/Culture\s*:\s*([^\n]+)/i);
+              if (mC) cultureStr = mC[1].trim();
+            }
+
+            const cultureName = normalizeCultureName(cultureStr);
+            const polygonNodes = placemarks[i].getElementsByTagName("Polygon");
+            for (let p = 0; p < polygonNodes.length; p++) {
+              const outerBoundary =
+                polygonNodes[p].getElementsByTagName("outerBoundaryIs")[0];
+              const coordinatesNode = (
+                outerBoundary || polygonNodes[p]
+              ).getElementsByTagName("coordinates")[0];
+              if (!coordinatesNode) continue;
+
+              const points = coordinatesNode.textContent
+                .trim()
+                .split(/\s+/)
+                .map((tuple) => {
+                  const [lng, lat] = tuple.split(",").map(Number);
+                  return { lat, lng };
+                })
+                .filter(
+                  (point) =>
+                    Number.isFinite(point.lat) && Number.isFinite(point.lng),
+                );
+              if (points.length >= 3) {
+                fieldPolygons.push(points);
+                const overlay = new window.google.maps.Polygon({
+                  paths: points,
+                  map,
+                  strokeColor: CROP_COLORS[cultureName] || "#ffffff",
+                  fillColor: CROP_COLORS[cultureName] || "#ffffff",
+                  clickable: true,
+                  ...getFieldOverlayStyle(cultureName, selectedCropRef.current),
+                });
+                overlay.addListener("click", () => {
+                  const content = desc?.textContent || "";
+                  const lines = content
+                    .replace(/<[^>]+>/g, "\n")
+                    .split(/\r?\n/)
+                    .map((line) => line.trim())
+                    .filter(Boolean);
+                  const infos = lines
+                    .filter((line) => line.includes(":"))
+                    .slice(0, 2)
+                    .map((line) => {
+                      const index = line.indexOf(":");
+                      return `${line.slice(0, index)} ${line.slice(index)}`;
+                    });
+                  setMapInfo([infos[0] || "", infos[1] || ""]);
+                  if (cultureName !== "N/A") setSelectedCrop(cultureName);
+                });
+                fieldOverlaysRef.current.push({
+                  overlay,
+                  culture: cultureName,
+                });
+              }
+            }
+
+            cTotals[cultureName] = (cTotals[cultureName] || 0) + surface;
+            total += surface;
+          }
+          setTotalHa(total.toFixed(2));
+          setCropTotals(cTotals);
+          fieldPolygonsRef.current = fieldPolygons;
+          if (fieldPolygons.length > 0) {
+            const bounds = new window.google.maps.LatLngBounds();
+            fieldPolygons.flat().forEach((point) => bounds.extend(point));
+            map.fitBounds(bounds);
+          }
         } catch (error) {
           console.error("Error loading KML layer:", error);
         }
@@ -715,49 +718,51 @@ export default function FieldsPage() {
     <div className="fields-page">
       <Nav />
       <div id="mapCap">
-        <div className={`fields-layout ${arePanelsVisible ? "" : "panels-hidden"}`}>
+        <div
+          className={`fields-layout ${arePanelsVisible ? "" : "panels-hidden"}`}
+        >
           <div
             id="legend"
             className={arePanelsVisible ? "" : "fields-panel-hidden"}
           >
-          <h2>Légende</h2>
-          {Object.entries(CROP_COLORS).map(([name, color]) => (
-            <div
-              className={`lin ${selectedCrop === name ? "selected" : ""}`}
-              key={name}
-              id={name === "Pdt" ? "pdt" : undefined}
-              onMouseEnter={
-                name === "Pdt" ? () => setShowPdtInfo(true) : undefined
-              }
-              onMouseLeave={
-                name === "Pdt" ? () => setShowPdtInfo(false) : undefined
-              }
-              onClick={() =>
-                setSelectedCrop((prev) => (prev === name ? null : name))
-              }
-              style={{
-                cursor: "pointer",
-                fontWeight: selectedCrop === name ? "bold" : "normal",
-                opacity: selectedCrop && selectedCrop !== name ? 0.5 : 1,
-              }}
-            >
+            <h2>Légende</h2>
+            {Object.entries(CROP_COLORS).map(([name, color]) => (
               <div
+                className={`lin ${selectedCrop === name ? "selected" : ""}`}
+                key={name}
+                id={name === "Pdt" ? "pdt" : undefined}
+                onMouseEnter={
+                  name === "Pdt" ? () => setShowPdtInfo(true) : undefined
+                }
+                onMouseLeave={
+                  name === "Pdt" ? () => setShowPdtInfo(false) : undefined
+                }
+                onClick={() =>
+                  setSelectedCrop((prev) => (prev === name ? null : name))
+                }
                 style={{
-                  backgroundColor: color,
-                  boxSizing: "border-box",
-                  border: selectedCrop === name ? "2px solid white" : "none",
+                  cursor: "pointer",
+                  fontWeight: selectedCrop === name ? "bold" : "normal",
+                  opacity: selectedCrop && selectedCrop !== name ? 0.5 : 1,
                 }}
-              />
-              <p>{name === "Pdt" ? "Pdt*" : name}</p>
-            </div>
+              >
+                <div
+                  style={{
+                    backgroundColor: color,
+                    boxSizing: "border-box",
+                    border: selectedCrop === name ? "2px solid white" : "none",
+                  }}
+                />
+                <p>{name === "Pdt" ? "Pdt*" : name}</p>
+              </div>
             ))}
-          {showPdtInfo && (
-            <div className="lin">
-            <p id="info" style={{ padding: 0, marginTop: "-2%" }}>
-              *Pdt: Pomme de terre
-            </p>
-            </div>
-          )}
+            {showPdtInfo && (
+              <div className="lin">
+                <p id="info" style={{ padding: 0, marginTop: "-2%" }}>
+                  *Pdt: Pomme de terre
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="fields-map-column">
@@ -779,14 +784,12 @@ export default function FieldsPage() {
                 value={selectedDate}
                 onChange={(e) => changeDate(e.target.value)}
                 disabled={
-                  !availableDates.filter((date) =>
-                    date.startsWith(`${year}-`),
-                  ).length
+                  !availableDates.filter((date) => date.startsWith(`${year}-`))
+                    .length
                 }
               >
-                {!availableDates.filter((date) =>
-                  date.startsWith(`${year}-`),
-                ).length && <option value="">Aucune trace</option>}
+                {!availableDates.filter((date) => date.startsWith(`${year}-`))
+                  .length && <option value="">Aucune trace</option>}
                 {availableDates
                   .filter((date) => date.startsWith(`${year}-`))
                   .map((date) => (
@@ -809,7 +812,9 @@ export default function FieldsPage() {
             aria-expanded={arePanelsVisible}
             onClick={() => setArePanelsVisible((visible) => !visible)}
           >
-            {arePanelsVisible ? "⟨ Masquer les panneaux ⟩" : "⟨ Afficher les panneaux ⟩"}
+            {arePanelsVisible
+              ? "⟨ Masquer les panneaux ⟩"
+              : "⟨ Afficher les panneaux ⟩"}
           </button>
 
           <div
@@ -842,102 +847,102 @@ export default function FieldsPage() {
               )}
             </div>
             <div id="coverageCalc">
-            <h2>Surface couverte</h2>
-            {availableTrackDevices.length === 0 ? (
-              <div className="lin">
-                <p className="coverage-muted">Aucune trace pour cette date</p>
-              </div>
-            ) : (
-              availableTrackDevices.map((deviceId) => (
-                <div className="lin coverage-device-row" key={deviceId}>
-                  <label htmlFor={`width-${deviceId}`}>
-                    Largeur {deviceId} (m)
-                  </label>
-                  <input
-                    id={`width-${deviceId}`}
-                    type="number"
-                    min="0.1"
-                    max="30"
-                    step="0.1"
-                    value={getImplementWidth(deviceId)}
-                    onChange={(event) =>
-                      setDeviceWidth(deviceId, event.target.value)
-                    }
-                  />
+              <h2>Surface couverte</h2>
+              {availableTrackDevices.length === 0 ? (
+                <div className="lin">
+                  <p className="coverage-muted">Aucune trace pour cette date</p>
                 </div>
-              ))
-            )}
-            <div className="lin">
-              <button
-                className="pp-btn pp-btn-primary"
-                onClick={calculateCoverage}
-                disabled={
-                  calculatingCoverage || availableTrackDevices.length === 0
-                }
-              >
-                {calculatingCoverage ? "Calcul..." : "Calculer"}
-              </button>
-            </div>
-            {coverageError && (
+              ) : (
+                availableTrackDevices.map((deviceId) => (
+                  <div className="lin coverage-device-row" key={deviceId}>
+                    <label htmlFor={`width-${deviceId}`}>
+                      Largeur {deviceId} (m)
+                    </label>
+                    <input
+                      id={`width-${deviceId}`}
+                      type="number"
+                      min="0.1"
+                      max="30"
+                      step="0.1"
+                      value={getImplementWidth(deviceId)}
+                      onChange={(event) =>
+                        setDeviceWidth(deviceId, event.target.value)
+                      }
+                    />
+                  </div>
+                ))
+              )}
               <div className="lin">
-                <p className="coverage-error">{coverageError}</p>
+                <button
+                  className="pp-btn pp-btn-primary"
+                  onClick={calculateCoverage}
+                  disabled={
+                    calculatingCoverage || availableTrackDevices.length === 0
+                  }
+                >
+                  {calculatingCoverage ? "Calcul..." : "Calculer"}
+                </button>
               </div>
-            )}
-            {coverageResult?.warnings?.length > 0 && (
-              <div className="lin">
-                <p className="coverage-warning">
-                  {coverageResult.warnings.join(" · ")}
-                </p>
-              </div>
-            )}
-            {coverageResult && (
-              <div className="lin">
-                <p>{coverageResult.totalAreaHa.toFixed(2)} Ha couverts</p>
-              </div>
-            )}
-              </div>
-              <div id="gpsDevices">
-                <h2>GPS</h2>
-                <div id="deviceButtons">
-              {Object.keys(gpsPositions).map((id) => {
-                const pos = gpsPositions[id];
-                const speed = formatSpeed(pos);
-                return (
-                  <button
-                    key={id}
-                    className="device-btn"
-                    onClick={() => centerOnDevice(id)}
-                    title={speed ? `Vitesse: ${speed}` : ""}
-                  >
-                    📍 {id}
-                    {speed && (
-                      <span
-                        style={{
-                          display: "block",
-                          fontSize: "0.75em",
-                          opacity: 0.8,
-                        }}
-                      >
-                        {speed}
-                      </span>
-                    )}
-                    {pos.source && (
-                      <span
-                        style={{
-                          display: "block",
-                          fontSize: "0.7em",
-                          opacity: 0.65,
-                        }}
-                      >
-                        {pos.source}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+              {coverageError && (
+                <div className="lin">
+                  <p className="coverage-error">{coverageError}</p>
                 </div>
+              )}
+              {coverageResult?.warnings?.length > 0 && (
+                <div className="lin">
+                  <p className="coverage-warning">
+                    {coverageResult.warnings.join(" · ")}
+                  </p>
+                </div>
+              )}
+              {coverageResult && (
+                <div className="lin">
+                  <p>{coverageResult.totalAreaHa.toFixed(2)} Ha couverts</p>
+                </div>
+              )}
+            </div>
+            <div id="gpsDevices">
+              <h2>GPS</h2>
+              <div id="deviceButtons">
+                {Object.keys(gpsPositions).map((id) => {
+                  const pos = gpsPositions[id];
+                  const speed = formatSpeed(pos);
+                  return (
+                    <button
+                      key={id}
+                      className="device-btn"
+                      onClick={() => centerOnDevice(id)}
+                      title={speed ? `Vitesse: ${speed}` : ""}
+                    >
+                      📍 {id}
+                      {speed && (
+                        <span
+                          style={{
+                            display: "block",
+                            fontSize: "0.75em",
+                            opacity: 0.8,
+                          }}
+                        >
+                          {speed}
+                        </span>
+                      )}
+                      {pos.source && (
+                        <span
+                          style={{
+                            display: "block",
+                            fontSize: "0.7em",
+                            opacity: 0.65,
+                          }}
+                        >
+                          {pos.source}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
+          </div>
         </div>
       </div>
     </div>
