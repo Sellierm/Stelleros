@@ -261,7 +261,6 @@ html.dark-theme #map .gm-style button[aria-label="Close"] {
 }
 
 html.dark-theme .fields-layout-toggle {
-  filter: invert(1) hue-rotate(180deg);
   color: #e2f0e9;
   background: #1f3a32;
   border-color: rgba(196, 235, 218, 0.22);
@@ -355,7 +354,7 @@ html.dark-theme .fields-layout-toggle:focus-visible {
   font-size: 11px !important;
 }
 
-.pp-btn,
+.fields-page .pp-btn,
 .device-btn {
   border: 0;
   border-radius: 11px;
@@ -367,7 +366,7 @@ html.dark-theme .fields-layout-toggle:focus-visible {
     background 160ms ease;
 }
 
-.pp-btn {
+.fields-page .pp-btn {
   width: 100%;
   padding: 10px 14px;
   color: white;
@@ -377,13 +376,13 @@ html.dark-theme .fields-layout-toggle:focus-visible {
   font-weight: 700;
 }
 
-.pp-btn:hover:not(:disabled),
+.fields-page .pp-btn:hover:not(:disabled),
 .device-btn:hover {
   background: var(--fields-accent-dark);
   transform: translateY(-1px);
 }
 
-.pp-btn:disabled {
+.fields-page .pp-btn:disabled {
   cursor: not-allowed;
   opacity: 0.48;
 }
@@ -456,19 +455,6 @@ html.dark-theme #infoPanel input,
 html.dark-theme .fields-filters select {
   color: var(--fields-ink);
   background: rgba(15, 29, 25, 0.88);
-}
-
-/* Le filtre global invert + hue-rotate du thème sombre dénature les couleurs
-   saturées (le jaune du blé devient brun) : la page Parcelles en est exclue
-   et s'appuie uniquement sur ses styles sombres explicites. */
-html.dark-theme:has(.fields-page) {
-  filter: none;
-  background-color: #13231f;
-}
-
-html.dark-theme:has(.fields-page)
-  :is(img, video, iframe, svg, header, #map, .fields-layout-toggle) {
-  filter: none;
 }
 
 html.dark-theme #mapCap {

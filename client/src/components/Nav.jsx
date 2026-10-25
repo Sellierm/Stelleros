@@ -91,15 +91,7 @@ export default function Nav() {
           </li>
         </ul>
       </nav>
-      <div
-        className="nav-actions"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "10px",
-          marginRight: "1vw",
-        }}
-      >
+      <div className="nav-actions">
         <label className="theme-switch" title="Basculer le thème">
           <input type="checkbox" checked={isDark} onChange={toggleTheme} />
           <span className="slider">
@@ -123,7 +115,6 @@ export default function Nav() {
           className="cta"
           id="deco"
           href="#"
-          style={{ marginRight: 0 }}
           onClick={(e) => {
             e.preventDefault();
             handleLogout();

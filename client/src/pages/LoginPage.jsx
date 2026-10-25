@@ -43,37 +43,44 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="login-bg">
-      <div className="login">
-        <h1>Login</h1>
+    <div className="login-bg app-page">
+      <div className="login app-card">
+        <span className="app-kicker">Farm</span>
+        <h1>Connexion</h1>
         <form onSubmit={handleSubmit}>
-          <label htmlFor="username">
-            <i className="fas fa-user" />
-          </label>
-          <input
-            type="text"
-            id="username"
-            name="username"
-            placeholder="Username"
-            autoComplete="username"
-            required
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-          />
-          <label htmlFor="password">
-            <i className="fas fa-lock" />
-          </label>
-          <input
-            type="password"
-            id="password"
-            name="password"
-            placeholder="Password"
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          <p id="error">{error}</p>
+          <div className="login-field">
+            <label htmlFor="username" aria-label="Nom d'utilisateur">
+              <i className="fas fa-user" />
+            </label>
+            <input
+              type="text"
+              id="username"
+              name="username"
+              placeholder="Username"
+              autoComplete="username"
+              required
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+            />
+          </div>
+          <div className="login-field">
+            <label htmlFor="password" aria-label="Mot de passe">
+              <i className="fas fa-lock" />
+            </label>
+            <input
+              type="password"
+              id="password"
+              name="password"
+              placeholder="Password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+          <p id="error" role="alert">
+            {error}
+          </p>
           <input type="submit" value="Login" />
         </form>
       </div>

@@ -219,16 +219,9 @@ function ApplicationForm({ initial, products, onSubmit, onCancel, onAlert }) {
 
       <div className="pp-form-row">
         <label>Produits et doses *</label>
-        <div
-          style={{
-            border: "1px solid #ccc",
-            padding: "10px",
-            borderRadius: "4px",
-            marginBottom: "10px",
-          }}
-        >
+        <div className="pp-product-picker">
           {selectedProducts.length === 0 ? (
-            <div style={{ color: "#999" }}>Aucun produit sélectionné</div>
+            <div className="pp-muted">Aucun produit sélectionné</div>
           ) : (
             selectedProducts.map((sp, idx) => {
               const product = products.find(
@@ -244,21 +237,14 @@ function ApplicationForm({ initial, products, onSubmit, onCancel, onAlert }) {
                   }}
                 >
                   <div
-                    style={{
-                      display: "flex",
-                      gap: "8px",
-                      alignItems: "flex-start",
-                      flexWrap: "wrap",
-                      borderBottom: hasError ? "2px solid #ff4444" : "none",
-                      paddingBottom: hasError ? "8px" : "0",
-                    }}
+                    className={`pp-product-row ${hasError ? "pp-product-row-error" : ""}`}
                   >
                     <select
                       value={sp.product_id}
                       onChange={(e) =>
                         updateProduct(idx, "product_id", e.target.value)
                       }
-                      style={{ flex: "1 1 auto", minWidth: "150px" }}
+                      className="pp-product-select"
                     >
                       {products.map((p) => (
                         <option key={p.id} value={p.id}>
@@ -275,42 +261,18 @@ function ApplicationForm({ initial, products, onSubmit, onCancel, onAlert }) {
                       onChange={(e) =>
                         updateProduct(idx, "quantity_used", e.target.value)
                       }
-                      style={{
-                        flex: "0 1 120px",
-                        borderColor: hasError ? "#ff4444" : "inherit",
-                        boxShadow: hasError
-                          ? "0 0 0 2px rgba(255,68,68,0.1)"
-                          : "none",
-                      }}
+                      className="pp-quantity-input"
                     />
                     <button
                       type="button"
+                      className="pp-remove-btn"
                       onClick={() => removeProduct(idx)}
-                      style={{
-                        padding: "8px 12px",
-                        background: "#ff4444",
-                        color: "white",
-                        border: "none",
-                        borderRadius: "4px",
-                        cursor: "pointer",
-                        flexShrink: 0,
-                      }}
+                      aria-label="Retirer le produit"
                     >
                       ✕
                     </button>
                   </div>
-                  {hasError && (
-                    <div
-                      style={{
-                        color: "#ff4444",
-                        fontSize: "12px",
-                        marginTop: "4px",
-                        fontWeight: "500",
-                      }}
-                    >
-                      {hasError}
-                    </div>
-                  )}
+                  {hasError && <div className="pp-field-error">{hasError}</div>}
                 </div>
               );
             })
@@ -321,7 +283,6 @@ function ApplicationForm({ initial, products, onSubmit, onCancel, onAlert }) {
           className="pp-btn pp-btn-ghost"
           onClick={addProduct}
           disabled={products.length === 0}
-          style={{ marginTop: "8px" }}
         >
           + Ajouter un produit
         </button>
@@ -639,7 +600,7 @@ export default function PhytoPage() {
   // ─── Render ──────────────────────────────────────────────────
 
   return (
-    <>
+    <div className="phyto-page app-page">
       <Nav />
       <div className="pp-page">
         <div className="pp-summary-grid">
@@ -661,7 +622,7 @@ export default function PhytoPage() {
                 <h2>Produits phyto</h2>
                 <span className="pp-panel-subtitle">Stock et notes</span>
               </div>
-              <div style={{ display: "flex", gap: "8px" }}>
+              <div className="pp-header-actions">
                 {!loading && products.length > 0 && (
                   <button
                     className="pp-btn pp-btn-ghost"
@@ -682,39 +643,18 @@ export default function PhytoPage() {
             </div>
 
             {!loading && products.length > 0 && (
-              <div
-                style={{
-                  padding: "10px",
-                  marginBottom: "10px",
-                  display: "flex",
-                  gap: "8px",
-                }}
-              >
+              <div className="pp-toolbar">
                 <input
                   type="text"
+                  className="app-input pp-toolbar-search"
                   placeholder="Chercher un produit..."
                   value={searchProducts}
                   onChange={(e) => setSearchProducts(e.target.value)}
-                  style={{
-                    flex: 1,
-                    padding: "8px",
-                    border: "1px solid #ccc",
-                    borderRadius: "4px",
-                    fontSize: "14px",
-                    boxSizing: "border-box",
-                  }}
                 />
                 <select
+                  className="app-input pp-toolbar-select"
                   value={sortProductsBy}
                   onChange={(e) => setSortProductsBy(e.target.value)}
-                  style={{
-                    padding: "8px",
-                    border: "1px solid #ccc",
-                    borderRadius: "4px",
-                    fontSize: "14px",
-                    backgroundColor: "white",
-                    cursor: "pointer",
-                  }}
                 >
                   <option value="name">Trier: Nom</option>
                   <option value="category">Trier: Catégorie</option>
@@ -822,39 +762,18 @@ export default function PhytoPage() {
             </div>
 
             {!loading && applications.length > 0 && (
-              <div
-                style={{
-                  padding: "10px",
-                  marginBottom: "10px",
-                  display: "flex",
-                  gap: "8px",
-                }}
-              >
+              <div className="pp-toolbar">
                 <input
                   type="text"
+                  className="app-input pp-toolbar-search"
                   placeholder="Chercher une intervention..."
                   value={searchApplications}
                   onChange={(e) => setSearchApplications(e.target.value)}
-                  style={{
-                    flex: 1,
-                    padding: "8px",
-                    border: "1px solid #ccc",
-                    borderRadius: "4px",
-                    fontSize: "14px",
-                    boxSizing: "border-box",
-                  }}
                 />
                 <select
+                  className="app-input pp-toolbar-select"
                   value={filterApplicationsYear}
                   onChange={(e) => setFilterApplicationsYear(e.target.value)}
-                  style={{
-                    padding: "8px",
-                    border: "1px solid #ccc",
-                    borderRadius: "4px",
-                    fontSize: "14px",
-                    backgroundColor: "white",
-                    cursor: "pointer",
-                  }}
                 >
                   <option value="">Toutes les années</option>
                   {availableYears.map((year) => (
@@ -928,7 +847,7 @@ export default function PhytoPage() {
                         <div key={idx} className="pp-product-meta-row">
                           <span>{p.product_name}</span>
                           {p.quantity_used != null && (
-                            <span style={{ color: "#888", fontSize: 12 }}>
+                            <span className="pp-inline-meta">
                               — {p.quantity_used}{" "}
                               {products.find((pr) => pr.id === p.product_id)
                                 ?.unit || ""}
@@ -1082,6 +1001,6 @@ export default function PhytoPage() {
           </div>
         </Modal>
       )}
-    </>
+    </div>
   );
 }

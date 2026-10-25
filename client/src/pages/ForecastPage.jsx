@@ -81,6 +81,7 @@ function DayDetail({ day, dailyData, onClose, onChangeDay }) {
         <span className="chevron-container" onClick={onClose}>
           <img
             src="/assets/1141405.png"
+            className="app-mono-icon"
             style={{ width: 12, height: 12 }}
             alt="back"
           />
@@ -108,7 +109,11 @@ function DayDetail({ day, dailyData, onClose, onChangeDay }) {
           {/* Weather items */}
           <ul className="weather-items text-container orange-side standard-padding">
             <li>
-              <img src="/assets/rain.png" className="icon-snow" alt="rain" />
+              <img
+                src="/assets/rain.png"
+                className="icon-snow app-mono-icon"
+                alt="rain"
+              />
               <span>
                 {day.rain
                   ? `${day.rain} mm (${Math.round(day.pop * 100)}%)`
@@ -120,7 +125,7 @@ function DayDetail({ day, dailyData, onClose, onChangeDay }) {
             <li>
               <img
                 src="/assets/wind.png"
-                className="icon-wind-direction"
+                className="icon-wind-direction app-mono-icon"
                 style={{ transform: `rotate(${90 + day.wind_deg}deg)` }}
                 alt="wind"
               />
@@ -132,7 +137,7 @@ function DayDetail({ day, dailyData, onClose, onChangeDay }) {
             <li>
               <img
                 src="/assets/pressure.png"
-                className="icon-wind-direction"
+                className="icon-wind-direction app-mono-icon"
                 alt="pressure"
               />
               <span>{day.pressure} hPa</span>
@@ -227,6 +232,11 @@ export default function ForecastPage() {
     if (!forecastData || loading) return;
 
     import("chart.js/auto").then(({ default: Chart }) => {
+      const theme = getComputedStyle(document.documentElement);
+      const mutedColor =
+        theme.getPropertyValue("--app-muted").trim() || "#6f837c";
+      const panelColor =
+        theme.getPropertyValue("--app-panel-solid").trim() || "#ffffff";
       const hourlyData = forecastData.hourly || [];
       const times = hourlyData.map((h) => fmtTime(h.dt));
       const temperatures = hourlyData.map((h) => h.temp);
@@ -285,7 +295,7 @@ export default function ForecastPage() {
               type: "bar",
               label: "Pluie (mm)",
               data: rains,
-              borderColor: "rgb(255,255,255)",
+              borderColor: panelColor,
               backgroundColor: "rgb(176,224,230)",
               yAxisID: "right",
               borderWidth: 2,
@@ -301,6 +311,7 @@ export default function ForecastPage() {
               grid: { display: false },
               border: { display: false },
               position: "top",
+              ticks: { color: mutedColor },
             },
             left: {
               suggestedMin: Math.floor(Math.min(...temperatures)) - 0.5,
@@ -331,12 +342,19 @@ export default function ForecastPage() {
   const dailyData = forecastData?.daily || [];
 
   return (
-    <>
+    <div className="forecast-page app-page">
       <Nav />
-      <div className="forecast-page">
+      <main className="forecast-dashboard">
         <div className="forecast">
           {/* Hourly */}
-          <div className="hourly">
+          <section className="hourly app-card">
+            <div className="forecast-card-heading">
+              <span className="app-kicker">Prévisions horaires</span>
+              <span className="forecast-legend">
+                <span className="forecast-legend-temp">Température</span>
+                <span className="forecast-legend-rain">Pluie</span>
+              </span>
+            </div>
             {loading ? (
               <div className="forecast-loading forecast-loading-hourly">
                 <img src="/assets/loading.gif" alt="loading" />
@@ -351,10 +369,15 @@ export default function ForecastPage() {
                 </div>
               </div>
             )}
-          </div>
+          </section>
 
           {/* Daily */}
-          <div className="daily">
+          <section className="daily app-card">
+            {!selectedDay && (
+              <div className="forecast-card-heading">
+                <span className="app-kicker">7 prochains jours</span>
+              </div>
+            )}
             {loading ? (
               <div className="forecast-loading forecast-loading-daily">
                 <img src="/assets/loading.gif" alt="loading" />
@@ -393,18 +416,12 @@ export default function ForecastPage() {
                             {Math.round(day.temp.min)}°C
                           </span>
                         </div>
-                        <span
-                          style={{
-                            width: 100,
-                            textAlign: "right",
-                            color: "#8a8a8a",
-                            fontSize: 10,
-                          }}
-                        >
+                        <span className="day-list-description">
                           {day.weather[0].description}
                         </span>
                         <img
                           src="/assets/1141402.png"
+                          className="app-mono-icon"
                           style={{ width: 12, height: 12 }}
                           alt=">"
                         />
@@ -414,9 +431,9 @@ export default function ForecastPage() {
                 })}
               </ul>
             )}
-          </div>
+          </section>
         </div>
-      </div>
-    </>
+      </main>
+    </div>
   );
 }

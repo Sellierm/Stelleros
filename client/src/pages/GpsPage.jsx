@@ -196,84 +196,90 @@ export default function GpsPage() {
     }
   };
 
+  const fields = [
+    {
+      id: "width",
+      label: "Largeur de l'outil",
+      hint: "Largeur de la trace en mètres",
+      value: width,
+      onChange: setWidth,
+    },
+    {
+      id: "space",
+      label: "Espace entre les lignes",
+      hint: "Espace entre les lignes en mètres",
+      value: space,
+      onChange: setSpace,
+    },
+    {
+      id: "length",
+      label: "Longueur de la ligne",
+      hint: "Longueur de la ligne en mètres",
+      value: length,
+      onChange: setLength,
+    },
+  ];
+
   return (
-    <>
+    <div className="gps-page app-page">
       <Nav />
       {!mapOpen && (
-        <div className="container">
-          <div className="mb-3">
-            <label htmlFor="width" className="form-label">
-              Largeur de l'outil
-            </label>
-            <input
-              type="number"
-              className="form-control"
-              id="width"
-              value={width}
-              onChange={(e) => setWidth(parseFloat(e.target.value))}
-            />
-            <div className="form-text">Largeur de la trace en mètres</div>
-          </div>
-          <div className="mb-3">
-            <label htmlFor="space" className="form-label">
-              Espace entre les lignes
-            </label>
-            <input
-              type="number"
-              className="form-control"
-              id="space"
-              value={space}
-              onChange={(e) => setSpace(parseFloat(e.target.value))}
-            />
-            <div className="form-text">Espace entre les lignes en mètres.</div>
-          </div>
-          <div className="mb-3">
-            <label htmlFor="length" className="form-label">
-              Longueur de la ligne
-            </label>
-            <input
-              type="number"
-              className="form-control"
-              id="length"
-              value={length}
-              onChange={(e) => setLength(parseFloat(e.target.value))}
-            />
-            <div className="form-text">Longueur de la ligne en mètres.</div>
-          </div>
-          <div className="mb-3 form-check">
-            <button
-              className={`btn ${aDefined ? "btn-success" : "btn-primary"}`}
-              onClick={defineA}
-            >
-              Définir A
-            </button>
-          </div>
-          <div className="mb-3 form-check">
-            <button
-              className={`btn ${bDefined ? "btn-success" : "btn-primary"}`}
-              onClick={defineB}
-            >
-              Définir B
-            </button>
-          </div>
-          {aDefined && bDefined && (
-            <div className="mb-3 form-check">
-              <button className="btn btn-primary" onClick={openMap}>
-                OUVRIR LA CARTE
+        <main className="gps-dashboard">
+          <section className="gps-card app-card">
+            <span className="app-kicker">Guidage A-B</span>
+            <h2>Paramètres de la trace</h2>
+
+            <div className="gps-fields">
+              {fields.map(({ id, label, hint, value, onChange }) => (
+                <div className="gps-field" key={id}>
+                  <label htmlFor={id}>{label}</label>
+                  <input
+                    type="number"
+                    className="app-input"
+                    id={id}
+                    value={value}
+                    onChange={(e) => onChange(parseFloat(e.target.value))}
+                  />
+                  <span className="gps-hint">{hint}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="gps-points">
+              <button
+                className={`app-btn ${aDefined ? "app-btn-ghost gps-point-set" : "app-btn-primary"}`}
+                onClick={defineA}
+              >
+                {aDefined ? "✓ Point A défini" : "Définir A"}
+              </button>
+              <button
+                className={`app-btn ${bDefined ? "app-btn-ghost gps-point-set" : "app-btn-primary"}`}
+                onClick={defineB}
+              >
+                {bDefined ? "✓ Point B défini" : "Définir B"}
               </button>
             </div>
-          )}
-        </div>
+
+            {aDefined && bDefined && (
+              <button
+                className="app-btn app-btn-primary gps-open-map"
+                onClick={openMap}
+              >
+                Ouvrir la carte
+              </button>
+            )}
+          </section>
+        </main>
       )}
       <div
         ref={mapRef}
         id="map"
         style={{
           display: mapOpen ? "block" : "none",
-          height: mapOpen ? `calc(100vh - 60px)` : 0,
+          height: mapOpen ? `calc(100vh - 56px)` : 0,
           width: "100%",
         }}
       />
-    </>
+    </div>
   );
 }
