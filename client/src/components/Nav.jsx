@@ -11,6 +11,22 @@ export default function Nav() {
   // Theme state
   const [isDark, setIsDark] = useState(false);
 
+  // Mobile menu state, closed on every route change
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [menuOpen]);
+
   useEffect(() => {
     // Check initial preference from localStorage or system
     const savedTheme = localStorage.getItem("theme");
@@ -60,9 +76,9 @@ export default function Nav() {
   const linkClass = ({ isActive }) => (isActive ? "link highlight" : "link");
 
   return (
-    <header>
+    <header className={menuOpen ? "menu-open" : undefined}>
       <h1 id="logo">{currentName}</h1>
-      <nav>
+      <nav id="main-nav">
         <ul className="nav_links">
           <li>
             <NavLink className={linkClass} to="/forecast">
@@ -122,6 +138,18 @@ export default function Nav() {
         >
           Log out
         </a>
+        <button
+          type="button"
+          className="menu-toggle"
+          aria-label={menuOpen ? "Fermer le menu" : "Ouvrir le menu"}
+          aria-expanded={menuOpen}
+          aria-controls="main-nav"
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          <span />
+          <span />
+          <span />
+        </button>
       </div>
     </header>
   );
