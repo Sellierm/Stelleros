@@ -59,7 +59,7 @@ header nav {
 
 .nav_links {
   display: flex;
-  justify-content: center;
+  justify-content: safe center;
   gap: 4px;
   margin: 0;
   padding: 0;
@@ -211,10 +211,13 @@ input:checked + .slider:before {
   margin: 20px;
 }
 
+.menu-toggle {
+  display: none;
+}
+
 @media (max-width: 700px) {
   header {
-    flex-wrap: wrap;
-    gap: 8px 12px;
+    gap: 8px;
   }
 
   #logo {
@@ -222,17 +225,86 @@ input:checked + .slider:before {
     font-size: 14px;
   }
 
+  .menu-toggle {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    width: 36px;
+    height: 36px;
+    padding: 0 9px;
+    border: 1px solid rgba(226, 240, 233, 0.2);
+    border-radius: 10px;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .menu-toggle span {
+    display: block;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--app-nav-ink);
+    transition:
+      transform 200ms ease,
+      opacity 200ms ease;
+  }
+
+  .menu-toggle:focus-visible {
+    outline: 2px solid var(--app-nav-active);
+    outline-offset: 2px;
+  }
+
+  .menu-open .menu-toggle span:nth-child(1) {
+    transform: translateY(6px) rotate(45deg);
+  }
+
+  .menu-open .menu-toggle span:nth-child(2) {
+    opacity: 0;
+  }
+
+  .menu-open .menu-toggle span:nth-child(3) {
+    transform: translateY(-6px) rotate(-45deg);
+  }
+
+  /* Dropdown overlays the page so the header keeps its 56px height */
   header nav {
-    order: 3;
-    flex-basis: 100%;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: 0;
+    display: none;
+    padding: 8px clamp(14px, 2vw, 28px) 14px;
+    background: var(--app-nav-bg);
+    box-shadow: 0 12px 24px rgba(13, 34, 28, 0.25);
+  }
+
+  .menu-open nav {
+    display: block;
   }
 
   .nav_links {
-    justify-content: flex-start;
+    flex-direction: column;
+    gap: 4px;
+    overflow: visible;
   }
 
   .nav_links li a {
-    padding: 7px 12px;
-    font-size: 12px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 360px) {
+  .theme-switch {
+    width: 48px;
+  }
+
+  input:checked + .slider:before {
+    transform: translateX(20px);
+  }
+
+  #deco {
+    padding: 7px 10px;
   }
 }
