@@ -8,7 +8,7 @@ use subtle::ConstantTimeEq;
 
 use super::require_user;
 use crate::js;
-use crate::location::{self, build_location_point, fmt_point, ingest_location_point};
+use crate::location::{self, build_location_point, ingest_location_point, log_point};
 use crate::middleware::{
     auth_log, client_ip, fail, json_response, peer_ip, query_values, read_body,
 };
@@ -85,11 +85,11 @@ pub async fn post_location(State(state): State<AppState>, req: Request) -> Respo
         }
     };
 
-    auth_log(
-        &client_ip,
-        "OK",
-        &format!("Position reçue (HTTP) : {}", fmt_point(&point)),
-    );
+    if let Err(res) = state.limiters.device.hit(&device_id).into_result() {
+        return res;
+    }
+
+    log_point(&state, &client_ip, "HTTP", &point);
     ingest_location_point(&state, point);
     json_response(StatusCode::OK, json!({ "success": true }))
 }
