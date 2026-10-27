@@ -184,7 +184,7 @@ impl Config {
             .unwrap_or_else(|| DEFAULT_AUTH_SECRET.into());
         if auth_secret == DEFAULT_AUTH_SECRET {
             if is_prod {
-                return Err("BETTER_AUTH_SECRET doit être défini en production".into());
+                return Err("BETTER_AUTH_SECRET doit être défini quand NODE_ENV=production (génère-le avec : openssl rand -base64 32)".into());
             }
             eprintln!(
                 "[AUTH] BETTER_AUTH_SECRET absent — secret par défaut utilisé (dev uniquement)"
