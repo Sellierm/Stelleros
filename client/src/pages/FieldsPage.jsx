@@ -185,6 +185,12 @@ export default function FieldsPage() {
       const lng = parseFloat(point.longitude);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
 
+      // À 10 Hz, les points peuvent arriver dans le désordre : on ignore
+      // ceux plus anciens que le dernier affiché pour ce device.
+      const ts = Number(point.timestamp);
+      const lastTs = Number(gpsSignaturesRef.current[deviceId]?.split("|")[0]);
+      if (Number.isFinite(ts) && Number.isFinite(lastTs) && ts < lastTs) return;
+
       const newPos = { lat, lng };
 
       // Mettre à jour la signature pour éviter les re-rendus inutiles

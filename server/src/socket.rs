@@ -15,7 +15,7 @@ use socketioxide::socket::DisconnectReason;
 
 use crate::auth;
 use crate::js;
-use crate::location::{build_location_point, fmt_point, ingest_location_point};
+use crate::location::{build_location_point, ingest_location_point, log_point};
 use crate::middleware::auth_log;
 use crate::routes::gps::is_ingest_key_valid;
 use crate::sencrop;
@@ -157,17 +157,23 @@ fn setup_gps_socket(s: SocketRef, ip: String, device_id: String) {
                         let _ = ack.send(&json!({ "success": false, "message": error }));
                     }
                 }
+                Ok(_) if state.limiters.device.hit(&event_device).into_result().is_err() => {
+                    // Au-delà de 10 Hz : point ignoré, sans log (ce serait
+                    // aussi bavard que le flux lui-même).
+                    if let Some(ack) = ack {
+                        let _ = ack.send(&json!({
+                            "success": false,
+                            "message": "Too many location updates for this device",
+                        }));
+                    }
+                }
                 Ok(point) => {
                     // Ack immédiat avant l'écriture en base : le device a
                     // seulement besoin de savoir que la position est acceptée.
                     if let Some(ack) = ack {
                         let _ = ack.send(&json!({ "success": true }));
                     }
-                    auth_log(
-                        &event_ip,
-                        "OK",
-                        &format!("Position reçue (socket) : {}", fmt_point(&point)),
-                    );
+                    log_point(&state, &event_ip, "socket", &point);
                     ingest_location_point(&state, point);
                 }
             }
