@@ -1,7 +1,7 @@
 # Stelleros
 
-Stelleros is a farm-management application built with React, Vite, Express,
-Socket.IO and MariaDB/MySQL.
+Stelleros is a farm-management application built with React, Vite, a Rust
+API (axum, Socket.IO via socketioxide, sqlx) and MariaDB/MySQL.
 
 The application provides:
 
@@ -15,17 +15,18 @@ The application provides:
 
 ```text
 client/                 React/Vite frontend
-server/                 Express API and Socket.IO server
-server/lib/auth.mjs     Better Auth configuration
-server/lib/authBridge.js CommonJS bridge for Express
-server/modules/         Database, map and Sencrop modules
-server/routes/          API route modules
+server/                 Rust API and Socket.IO server
+server/src/auth.rs      Better Auth compatible authentication endpoints
+server/src/routes/      API routes (phyto, GPS, config, forecast, SPA)
+server/src/socket.rs    Socket.IO events (web clients and GPS devices)
+server/schema/auth.sql  Authentication tables
 Dockerfile              Production image definition
 ```
 
 ## Requirements
 
-- Node.js 20 or newer;
+- Rust 1.94 or newer (`rustup`);
+- Node.js 20 or newer for the client;
 - MariaDB/MySQL;
 - Docker for container deployment;
 - API credentials for Google Maps, OpenWeather and Sencrop when those features
@@ -52,9 +53,12 @@ Set the values in `server/.env`:
 | `NODE_ENV` | Runtime environment, normally `development` or `production` |
 | `PORT`, `IP` | API listening port and address |
 | `CORS_ORIGINS` | Comma-separated allowed frontend origins |
-| `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_DATABASE` | MariaDB/MySQL connection |
-| `BETTER_AUTH_SECRET` | Long random secret used by Better Auth |
+| `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_DATABASE` | MariaDB/MySQL connection |
+| `BETTER_AUTH_SECRET` | Long random secret signing session cookies (required in production) |
 | `BETTER_AUTH_URL` | Public URL of the application |
+| `BETTER_AUTH_TRUSTED_ORIGINS` | Optional extra trusted origins, comma-separated |
+| `MAP_PLAN_URLS` | Comma-separated farm map URLs, one per year since 2022 |
+| `CLIENT_DIST` | Optional path to the React build (default `../client/dist`) |
 | `GPS_INGEST_KEY` | Shared key for GPS devices |
 | `GPS_ALLOWED_IDS` | Comma-separated authorized GPS device IDs |
 | `GOOGLE_MAPS_API_KEY` | Google Maps JavaScript API key |
@@ -94,27 +98,34 @@ npm run dev:client
 The client runs on <http://localhost:5173> and proxies `/api` and `/socket.io`
 to the API, which listens on port `4200` by default.
 
-The individual package commands are also available:
+The individual commands are also available:
 
 ```bash
-cd server && npm install && npm run dev
+cd server && cargo run
 cd client && npm install && npm run dev
+```
+
+Run the server checks with:
+
+```bash
+cd server && cargo test && cargo clippy --all-targets
 ```
 
 ## Authentication and database migration
 
-Authentication is handled by Better Auth. Express does not use
-`express-session`; sessions are stored in the database and accessed through
-`server/lib/authBridge.js`.
+The Rust API implements the Better Auth endpoints used by the client
+(`get-session`, `sign-in/username`, `sign-out`) with the same signed
+`better-auth.session_token` cookie, the same session lifetime (2 hours,
+refreshed every 5 minutes, 24 hours without "remember me") and the same
+database tables. Sessions created by the former Node server remain valid.
 
-Create Better Auth's tables with the CLI from the `server` directory:
+Create the authentication tables if they do not exist yet:
 
 ```bash
-cd server
-npx @better-auth/cli@latest migrate --config lib/auth.mjs
+mysql -u <user> -p <database> < server/schema/auth.sql
 ```
 
-The migration creates:
+The script creates:
 
 - `auth_user`;
 - `auth_session`;
@@ -201,10 +212,10 @@ environment. Do not use the obsolete schema in which
 
 ## Maps and weather configuration
 
-Field KML URLs are configured in
-[`server/modules/mapModule.js`](server/modules/mapModule.js), one entry per
-supported year. Update that file when adding or replacing Google My Maps
-layers.
+Field map URLs are configured with `MAP_PLAN_URLS`, one comma-separated entry
+per supported year starting with 2022. When the variable is empty, the server
+reads the `table` array of the untracked `server/modules/mapModule.js` file if
+it exists.
 
 The Google Maps API key is supplied through `GOOGLE_MAPS_API_KEY`. OpenWeather
 and Sencrop settings are supplied through the corresponding environment
@@ -233,7 +244,8 @@ cd ..
 docker build -t stelleros .
 ```
 
-Run it on port `3000`:
+The image compiles the Rust server in a build stage and copies
+`server/modules/mapModule.js` when it is present. Run it on port `3000`:
 
 ```bash
 docker run --rm --name stelleros \

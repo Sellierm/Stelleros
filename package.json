@@ -1,13 +1,13 @@
 {
   "name": "farm-react",
   "version": "1.0.0",
-  "description": "Farm management app – React + Vite + Express",
+  "description": "Farm management app – React + Vite + Rust (axum)",
   "scripts": {
-    "dev:server": "cd server && npm run dev",
+    "dev:server": "cd server && cargo run",
     "dev:client": "cd client && npm run dev",
-    "install:all": "cd server && npm install && cd ../client && npm install",
+    "install:all": "cd server && cargo build && cd ../client && npm install",
     "build": "cd client && npm run build && cd ../../ && docker compose up -d --build",
-    "start": "cd server && npm start"
+    "start": "cd server && cargo run --release"
   },
   "author": "Mathieu",
   "license": "ISC"
