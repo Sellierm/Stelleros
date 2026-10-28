@@ -325,21 +325,18 @@ fn emit2(s: &SocketRef, event: &'static str, a: &Value, b: &str) {
     let _ = s.emit(event, &(a, b));
 }
 
-fn setup_web_socket(s: SocketRef, ip: String, username: String) {
+fn setup_web_socket(s: SocketRef, ip: String, _username: String) {
     auth_log(
         &ip,
         "INFO",
-        &format!("Socket connecté : \"{username}\" (id: {})", s.id),
+        &format!("Socket connecté (id: {})", s.id),
     );
 
     s.on_disconnect(async move |reason: DisconnectReason| {
         auth_log(
             &ip,
             "INFO",
-            &format!(
-                "Socket déconnecté : \"{username}\" (raison: {})",
-                reason_label(reason)
-            ),
+            &format!("Socket déconnecté (raison: {})", reason_label(reason)),
         );
     });
 
