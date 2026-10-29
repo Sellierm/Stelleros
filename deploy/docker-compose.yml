@@ -1,0 +1,74 @@
+# Pile de déploiement (prod, et préprod plus tard).
+#
+# Ce fichier n'est pas utilisé depuis le dépôt : il est lu au travers d'un lien
+# symbolique placé dans le dossier parent du dépôt, qui devient le dossier de
+# projet Compose :
+#
+#   ~/site/
+#   ├── .env                  secrets MariaDB (non versionné)
+#   ├── docker-compose.yml -> app/deploy/docker-compose.yml
+#   └── app/                  ce dépôt
+#
+# Les chemins ci-dessous sont donc relatifs à ~/site, et le nom du projet
+# (préfixe des conteneurs et du volume db-data) est le nom de ce dossier.
+# Ne pas lancer `docker compose` depuis app/deploy/ : ce serait un autre projet,
+# avec une base vide.
+
+services:
+  site-app:
+    build: ./app
+    # .env : identifiants MariaDB partagés ; app/server/.env : configuration de
+    # l'API (auth, CORS, GPS, Sencrop…), qui n'est pas copiée dans l'image.
+    env_file:
+      - .env
+      - ./app/server/.env
+    environment:
+      DB_HOST: site-db
+      DB_USER: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      DB_NAME: ${MYSQL_DATABASE}
+      DB_DATABASE: ${MYSQL_DATABASE}
+    ports:
+      - "127.0.0.1:${APP_PORT}:4200"
+    networks: [site-net]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
+  site-db:
+    image: mariadb:11
+    env_file: .env
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MARIADB_DATABASE: ${MYSQL_DATABASE}
+      MARIADB_USER: ${MYSQL_USER}
+      MARIADB_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - db-data:/var/lib/mysql
+    networks: [site-net]
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  phpmyadmin:
+    image: phpmyadmin
+    env_file: .env
+    environment:
+      PMA_HOST: site-db
+    ports:
+      - "127.0.0.1:${PMA_PORT:-8081}:80"
+    networks: [site-net]
+    depends_on: [site-db]
+    restart: unless-stopped
+
+networks:
+  site-net:
+
+volumes:
+  db-data:

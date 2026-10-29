@@ -262,9 +262,11 @@ docker run --rm --name stelleros \
 Open <http://localhost:3000>. Rebuild the client and Docker image after
 frontend changes.
 
-If deployment uses Docker Compose, run Compose commands from the deployment
-environment's Compose file. This repository provides the `Dockerfile`, but
-does not require a Compose file for local image builds.
+The production stack (app, MariaDB, phpMyAdmin) is described in
+`deploy/docker-compose.yml`. On the server it is used through a symlink
+`~/site/docker-compose.yml -> app/deploy/docker-compose.yml`, so that `~/site`
+stays the Compose project directory (see the comments in the file). Run
+Compose commands from `~/site`, never from `deploy/`.
 
 ## GPS sender
 
