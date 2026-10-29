@@ -271,7 +271,12 @@ pub fn broadcast_points(state: &AppState, points: Vec<Map<String, Value>>) {
     tokio::spawn(async move {
         for point in points {
             let point = Value::Object(point);
-            if let Err(err) = state.io().to(WEB_ROOM).emit("location_update", &point).await {
+            if let Err(err) = state
+                .io()
+                .to(WEB_ROOM)
+                .emit("location_update", &point)
+                .await
+            {
                 eprintln!("[GPS] Erreur diffusion location_update: {err}");
             }
         }
@@ -328,7 +333,10 @@ pub async fn get_history(
                 longitude: js::to_number(row.get("longitude")),
                 accuracy: row.get("accuracy").and_then(Value::as_f64),
                 timestamp: row.get("timestamp").and_then(Value::as_i64).unwrap_or(0),
-                source: row.get("source").and_then(Value::as_str).map(str::to_string),
+                source: row
+                    .get("source")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
             })
             .collect();
         let kept = tokio::task::spawn_blocking(move || simplify(&track_points))
@@ -349,7 +357,10 @@ pub async fn get_history(
         device.insert("track".into(), Value::Array(track));
         device.insert(
             "last".into(),
-            rows.last().cloned().map(Value::Object).unwrap_or(Value::Null),
+            rows.last()
+                .cloned()
+                .map(Value::Object)
+                .unwrap_or(Value::Null),
         );
         positions.insert(key, Value::Object(device));
     }
@@ -392,13 +403,28 @@ mod tests {
     #[test]
     fn validation_rejects_invalid_values() {
         let ts = 1_800_000_000_000_i64;
-        assert!(point(serde_json::json!({ "latitude": 48.1, "longitude": -1.6, "timestamp": ts })).is_ok());
+        assert!(
+            point(serde_json::json!({ "latitude": 48.1, "longitude": -1.6, "timestamp": ts }))
+                .is_ok()
+        );
         // Coordonnées NaN/null/non numériques.
-        assert!(point(serde_json::json!({ "latitude": "NaN", "longitude": -1.6, "timestamp": ts })).is_err());
-        assert!(point(serde_json::json!({ "latitude": null, "longitude": -1.6, "timestamp": ts })).is_err());
-        assert!(point(serde_json::json!({ "latitude": 91, "longitude": -1.6, "timestamp": ts })).is_err());
+        assert!(
+            point(serde_json::json!({ "latitude": "NaN", "longitude": -1.6, "timestamp": ts }))
+                .is_err()
+        );
+        assert!(
+            point(serde_json::json!({ "latitude": null, "longitude": -1.6, "timestamp": ts }))
+                .is_err()
+        );
+        assert!(
+            point(serde_json::json!({ "latitude": 91, "longitude": -1.6, "timestamp": ts }))
+                .is_err()
+        );
         // Timestamp non numérique, trop ancien ou dans le futur.
-        assert!(point(serde_json::json!({ "latitude": 48.1, "longitude": -1.6, "timestamp": "abc" })).is_err());
+        assert!(
+            point(serde_json::json!({ "latitude": 48.1, "longitude": -1.6, "timestamp": "abc" }))
+                .is_err()
+        );
         assert!(point(serde_json::json!({ "latitude": 48.1, "longitude": -1.6, "timestamp": ts - 8 * 86_400_000 })).is_err());
         assert!(point(serde_json::json!({ "latitude": 48.1, "longitude": -1.6, "timestamp": ts + 120_000 })).is_err());
     }
@@ -413,7 +439,10 @@ mod tests {
         assert_eq!(p["latitude"], serde_json::json!(48.1));
         assert_eq!(p["speed"], Value::Null);
         assert_eq!(p["heading"], serde_json::json!(90));
-        assert_eq!(p["source"].as_str().unwrap().chars().count(), SOURCE_MAX_CHARS);
+        assert_eq!(
+            p["source"].as_str().unwrap().chars().count(),
+            SOURCE_MAX_CHARS
+        );
     }
 
     #[test]

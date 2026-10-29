@@ -476,7 +476,9 @@ mod tests {
 
     #[test]
     fn straight_line_keeps_ends_only() {
-        let points: Vec<_> = (0..100).map(|i| at(i as f64, 0.001 * (i % 2) as f64, i, 0.02)).collect();
+        let points: Vec<_> = (0..100)
+            .map(|i| at(i as f64, 0.001 * (i % 2) as f64, i, 0.02))
+            .collect();
         assert_eq!(simplify(&points), vec![0, 99]);
     }
 
@@ -577,10 +579,16 @@ mod tests {
     fn next_run_is_5am_paris() {
         // 29/10/2026 08:00 UTC (09:00 Paris) → 30/10 05:00 Paris = 04:00 UTC.
         let now = Utc.with_ymd_and_hms(2026, 10, 29, 8, 0, 0).unwrap();
-        assert_eq!(next_run(now), Utc.with_ymd_and_hms(2026, 10, 30, 4, 0, 0).unwrap());
+        assert_eq!(
+            next_run(now),
+            Utc.with_ymd_and_hms(2026, 10, 30, 4, 0, 0).unwrap()
+        );
         // 29/10/2026 02:00 UTC (03:00 Paris) → même jour 05:00 Paris.
         let early = Utc.with_ymd_and_hms(2026, 10, 29, 2, 0, 0).unwrap();
-        assert_eq!(next_run(early), Utc.with_ymd_and_hms(2026, 10, 29, 4, 0, 0).unwrap());
+        assert_eq!(
+            next_run(early),
+            Utc.with_ymd_and_hms(2026, 10, 29, 4, 0, 0).unwrap()
+        );
     }
 
     #[test]
