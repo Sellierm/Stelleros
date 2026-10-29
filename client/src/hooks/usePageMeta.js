@@ -7,7 +7,8 @@ import { useEffect } from "react";
  */
 export default function usePageMeta(title, favicon) {
   useEffect(() => {
-    document.title = title;
+    const envLabel = import.meta.env.VITE_ENV_LABEL;
+    document.title = envLabel ? `[${envLabel}] ${title}` : title;
 
     let link = document.querySelector("link[rel~='icon']");
     if (!link) {
