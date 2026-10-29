@@ -158,7 +158,14 @@ fn setup_gps_socket(s: SocketRef, ip: String, device_id: String) {
                     );
                     json!({ "success": false, "message": error })
                 }
-                Ok(_) if state.limiters.device.hit(&event_device).into_result().is_err() => {
+                Ok(_)
+                    if state
+                        .limiters
+                        .device
+                        .hit(&event_device)
+                        .into_result()
+                        .is_err() =>
+                {
                     // Au-delà de 10 Hz : point ignoré, sans log (ce serait
                     // aussi bavard que le flux lui-même).
                     json!({
@@ -406,11 +413,7 @@ fn emit2(s: &SocketRef, event: &'static str, a: &Value, b: &str) {
 }
 
 fn setup_web_socket(s: SocketRef, ip: String, _username: String) {
-    auth_log(
-        &ip,
-        "INFO",
-        &format!("Socket connecté (id: {})", s.id),
-    );
+    auth_log(&ip, "INFO", &format!("Socket connecté (id: {})", s.id));
     // Seuls les clients web reçoivent `location_update`.
     s.join(WEB_ROOM);
 

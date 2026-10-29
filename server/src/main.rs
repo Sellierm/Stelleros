@@ -84,9 +84,8 @@ fn build_router(state: AppState, socket_layer: socketioxide::layer::SocketIoLaye
 }
 
 async fn compact_gps_command(state: &AppState, args: &[String]) -> i32 {
-    let parse = |s: Option<&String>| {
-        s.and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
-    };
+    let parse =
+        |s: Option<&String>| s.and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
     let (Some(from), Some(to)) = (parse(args.first()), parse(args.get(1))) else {
         eprintln!("Usage : farm-server compact-gps AAAA-MM-JJ AAAA-MM-JJ");
         return 2;
