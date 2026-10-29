@@ -12,7 +12,7 @@ server/target/
 # Build client React
 client/dist/
 client/client/node_modules/
-client/client/pacjage-lock.json
+client/client/package-lock.json
 # Logs
 *.log
 npm-debug.log*
@@ -29,7 +29,10 @@ Thumbs.db
 server/modules/mapModule.js
 package-lock.json
 
+.claude/
 
 # Données GPS runtime (coordonnées réelles des appareils)
 latest_positions.json
 location_history.json
+# Instructions Claude Code (locales)
+CLAUDE.md
