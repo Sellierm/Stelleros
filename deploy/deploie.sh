@@ -18,6 +18,18 @@ keep=10
 
 compose() { (cd "$project_dir" && docker compose "$@"); }
 
+# Compose ne recrée pas site-app quand seule la cible de l'étiquette change :
+# on compare l'image du conteneur à celle voulue.
+start() {
+  compose up -d
+  local running wanted
+  running=$(docker inspect --format '{{.Image}}' "$(compose ps -q site-app)")
+  wanted=$(docker image inspect --format '{{.Id}}' "$target")
+  if [ "$running" != "$wanted" ]; then
+    compose up -d --force-recreate site-app
+  fi
+}
+
 # Une modification locale d'un fichier versionné rendrait l'arbre mensonger.
 if ! git -C "$repo" diff --quiet HEAD; then
   echo "Modifications locales dans $repo : abandon." >&2
@@ -37,7 +49,7 @@ else
 fi
 
 docker tag "stelleros:$tree" "$target"
-compose up -d
+start
 echo "$(date -u +%FT%TZ) $tree $commit $origin" >>"$project_dir/deploiements.log"
 echo "$target = stelleros:$tree (commit $commit, image $origin)."
 
@@ -51,4 +63,4 @@ done)
 docker images stelleros --format '{{.Tag}}' |
   { grep -E '^[0-9a-f]{12}$' || true; } |
   { grep -vxF "$kept" || true; } |
-  while read -r old; do docker rmi "stelleros:$old" >/dev/null || true; done
+  while read -r old; do docker rmi "stelleros:$old" >/dev/null 2>&1 || true; done

@@ -16,6 +16,18 @@ log="$project_dir/deploiements.log"
 
 compose() { (cd "$project_dir" && docker compose "$@"); }
 
+# Compose ne recrée pas site-app quand seule la cible de l'étiquette change :
+# on compare l'image du conteneur à celle voulue.
+start() {
+  compose up -d
+  local running wanted
+  running=$(docker inspect --format '{{.Image}}' "$(compose ps -q site-app)")
+  wanted=$(docker image inspect --format '{{.Id}}' "$target")
+  if [ "$running" != "$wanted" ]; then
+    compose up -d --force-recreate site-app
+  fi
+}
+
 target=$(compose config --images | grep '^stelleros:')
 
 if [ "${1:-}" = "--liste" ]; then
@@ -49,6 +61,6 @@ if ! docker image inspect "stelleros:$tree" >/dev/null 2>&1; then
 fi
 
 docker tag "stelleros:$tree" "$target"
-compose up -d
+start
 echo "$(date -u +%FT%TZ) $tree - retour-arriere" >>"$log"
 echo "$target = stelleros:$tree (retour arrière)."
