@@ -25,8 +25,15 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
+          # Arrêt à la première erreur ; --ff-only refuse tout commit de fusion
+          # si le dossier de prod n'est pas sur main ou a divergé.
           script: |
+            set -eu
             cd ~/site/app
-            git pull origin main
-            npm install
+            test "$(git branch --show-current)" = main
+            git pull -q --ff-only origin main
+            cd client
+            npm ci --no-audit --no-fund
             npm run build
+            cd ../..
+            docker compose up -d --build
