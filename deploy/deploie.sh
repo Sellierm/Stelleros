@@ -41,9 +41,14 @@ compose up -d
 echo "$(date -u +%FT%TZ) $tree $commit $origin" >>"$project_dir/deploiements.log"
 echo "$target = stelleros:$tree (commit $commit, image $origin)."
 
-# Ménage : seules les $keep images d'arbre les plus récentes sont gardées.
+# Ménage : on garde les $keep derniers arbres déployés de chaque projet
+# (prod et préprod partagent les images : ~/site*/deploiements.log). Les dates
+# des images ne servent pas : les builds reproductibles les rendent identiques.
 # Une image encore étiquetée prod/preprod ne perd que son étiquette d'arbre.
+kept=$(for f in "$(dirname "$project_dir")"/*/deploiements.log; do
+  tac "$f" | awk -v n="$keep" '!seen[$2]++ && kept++ < n { print $2 }'
+done)
 docker images stelleros --format '{{.Tag}}' |
-  grep -E '^[0-9a-f]{12}$' |
-  tail -n +"$((keep + 1))" |
+  { grep -E '^[0-9a-f]{12}$' || true; } |
+  { grep -vxF "$kept" || true; } |
   while read -r old; do docker rmi "stelleros:$old" >/dev/null || true; done

@@ -22,7 +22,7 @@ if [ "${1:-}" = "--liste" ]; then
   echo "Derniers déploiements (date, arbre, commit, image) :"
   tail -n 10 "$log" 2>/dev/null || echo "  (aucun)"
   echo "Images disponibles :"
-  docker images stelleros --format '  {{.Tag}}  {{.CreatedSince}}' | grep -E '^  [0-9a-f]{12} '
+  docker images stelleros --format '{{.Tag}}' | { grep -E '^[0-9a-f]{12}$' || true; } | sed 's/^/  /'
   exit 0
 fi
 
