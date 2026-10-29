@@ -17,6 +17,16 @@ const CROP_COLORS = {
 
 const YEARS = [2022, 2023, 2024, 2025, 2026, 2027];
 
+// Date du jour (AAAA-MM-JJ) à l'heure de Paris, comme le serveur et gps_days.
+// toISOString() donnerait la date UTC, fausse entre minuit et 1 h (2 h en été).
+const PARIS_DATE_FORMAT = new Intl.DateTimeFormat("fr-CA", {
+  timeZone: "Europe/Paris",
+});
+const todayParis = () => PARIS_DATE_FORMAT.format(new Date());
+
+// Fréquence de rafraîchissement du panneau latéral en temps réel
+const GPS_PANEL_REFRESH_MS = 1000;
+
 const normalizeCultureName = (str) => {
   if (!str) return "N/A";
   str = str.toLowerCase();
@@ -117,6 +127,7 @@ export default function FieldsPage() {
   const gpsPolylinesRef = useRef([]);
   const gpsSignaturesRef = useRef({});
   const gpsPollIntervalRef = useRef(null);
+  const pendingGpsPositionsRef = useRef({});
   const activeDeviceIdRef = useRef(null);
   const activeInfoWindowRef = useRef(null);
   const markerByDeviceRef = useRef({});
@@ -151,7 +162,7 @@ export default function FieldsPage() {
       .then((data) => {
         if (!data.success || !Array.isArray(data.dates)) return;
         setAvailableDates(data.dates);
-        const today = new Date().toISOString().slice(0, 10);
+        const today = todayParis();
         const initialDate = data.dates.includes(today)
           ? today
           : data.dates[0] || "";
@@ -171,7 +182,7 @@ export default function FieldsPage() {
   useEffect(() => {
     console.log("year:", year, "current:", new Date().getFullYear());
     const isCurrentYear = year === new Date().getFullYear();
-    const isToday = selectedDate === new Date().toISOString().slice(0, 10);
+    const isToday = selectedDate === todayParis();
     if (!socket) return;
 
     if (!isCurrentYear || !isToday) return;
@@ -221,12 +232,25 @@ export default function FieldsPage() {
       // Ajouter le point à la polyligne existante
       appendToPolyline(map, deviceId, newPos);
 
-      // Mettre à jour le state React pour le panneau latéral
-      setGpsPositions((prev) => ({ ...prev, [deviceId]: point }));
+      // Le panneau latéral est rafraîchi par l'intervalle ci-dessous : à
+      // 10 Hz (et en rafale au rattrapage), un rendu par point est inutile.
+      pendingGpsPositionsRef.current[deviceId] = point;
+    };
+
+    const flushGpsPositions = () => {
+      const pending = pendingGpsPositionsRef.current;
+      if (Object.keys(pending).length === 0) return;
+      pendingGpsPositionsRef.current = {};
+      setGpsPositions((prev) => ({ ...prev, ...pending }));
     };
 
     socket.on("location_update", handleLocationUpdate);
-    return () => socket.off("location_update", handleLocationUpdate);
+    const flushInterval = setInterval(flushGpsPositions, GPS_PANEL_REFRESH_MS);
+    return () => {
+      socket.off("location_update", handleLocationUpdate);
+      clearInterval(flushInterval);
+      pendingGpsPositionsRef.current = {};
+    };
   }, [socket, year, selectedDate]); // eslint-disable-line
 
   useEffect(() => {
@@ -322,7 +346,7 @@ export default function FieldsPage() {
     }
 
     // Les journées passées ne changent plus : on les garde en mémoire.
-    if (date < new Date().toISOString().slice(0, 10)) {
+    if (date < todayParis()) {
       historyCacheRef.current.set(date, historyByDevice);
     }
     return historyByDevice;
@@ -704,7 +728,7 @@ export default function FieldsPage() {
         // Ne rien faire si l'année sélectionnée n'est pas l'année courante
         if (
           yearRef.current !== new Date().getFullYear() ||
-          selectedDateRef.current !== new Date().toISOString().slice(0, 10)
+          selectedDateRef.current !== todayParis()
         )
           return;
         const changed = await loadGPSPositions(map);
