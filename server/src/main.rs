@@ -62,6 +62,7 @@ fn build_router(state: AppState, socket_layer: socketioxide::layer::SocketIoLaye
     Router::new()
         .route("/api/auth/{*rest}", any(auth::handler))
         .route("/api/config", get(routes::get_config))
+        .route("/api/env", get(routes::get_env))
         .route("/api/forecast", get(routes::get_forecast))
         .route("/api/latest-positions", get(routes::gps::latest_positions))
         .route(

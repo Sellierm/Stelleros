@@ -36,8 +36,15 @@ pub fn create_pool(cfg: &DbConfig) -> MySqlPool {
 }
 
 /// Applique les migrations de `server/migrations` (embarquées à la compilation).
+///
+/// Une migration déjà appliquée mais inconnue de ce binaire est tolérée : c'est
+/// le cas après un retour à une image précédente (deploy/retour-arriere.sh).
+/// Les migrations doivent donc rester compatibles avec le code d'avant
+/// (ajouts plutôt que suppressions ou renommages).
 pub async fn migrate(pool: &MySqlPool) -> Result<(), sqlx::migrate::MigrateError> {
-    sqlx::migrate!().run(pool).await
+    let mut migrator = sqlx::migrate!();
+    migrator.set_ignore_missing(true);
+    migrator.run(pool).await
 }
 
 /// Interprète une date/heure naïve comme heure locale (comportement mysql2).

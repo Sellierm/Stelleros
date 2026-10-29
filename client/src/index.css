@@ -3,7 +3,7 @@
   min-height: 100vh;
 }
 
-/* Bandeau d'environnement (préprod), cf. main.jsx */
+/* Bandeau d'environnement (préprod), cf. lib/envLabel.js */
 .env-banner {
   position: fixed;
   bottom: 8px;

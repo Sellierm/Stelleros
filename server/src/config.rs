@@ -40,6 +40,8 @@ pub struct Config {
     pub gps_retention_days: Option<u32>,
     pub db: DbConfig,
     pub google_maps_api_key: Option<String>,
+    /// Libellé affiché en bandeau par le client (« PRÉPROD »), absent en prod.
+    pub env_label: Option<String>,
     pub map_plan_urls: Vec<String>,
     pub forecast: ForecastConfig,
     pub sencrop: SencropConfig,
@@ -224,6 +226,7 @@ impl Config {
             gps_retention_days,
             db,
             google_maps_api_key: env::var("GOOGLE_MAPS_API_KEY").ok(),
+            env_label: non_empty("ENV_LABEL"),
             map_plan_urls: map_plan_urls(),
             forecast: ForecastConfig {
                 key: js_env("OPENWEATHER_API_KEY"),
