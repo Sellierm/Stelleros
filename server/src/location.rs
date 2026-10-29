@@ -72,58 +72,103 @@ pub fn log_point(state: &AppState, ip: &str, channel: &str, point: &Map<String, 
     );
 }
 
+/// Ancienneté maximale d'un point accepté : couvre une longue coupure réseau
+/// pendant laquelle la tablette a gardé ses positions en file.
+const MAX_POINT_AGE_MS: i64 = 7 * 24 * 60 * 60 * 1000;
+/// Avance tolérée sur l'horloge du serveur (dérive d'horloge du device).
+const MAX_POINT_FUTURE_MS: i64 = 60 * 1000;
+/// Longueur de la colonne `source` : au-delà, l'insert échouerait.
+const SOURCE_MAX_CHARS: usize = 30;
+/// Points maximum par événement `location_batch`.
+pub const MAX_BATCH_POINTS: usize = 100;
+
+/// Nombre fini uniquement (nombre JSON ou chaîne numérique) : `null`, `""`,
+/// booléens, NaN et infinis sont refusés.
+fn finite_number(value: Option<&Value>) -> Option<f64> {
+    let f = match value? {
+        Value::Number(n) => n.as_f64()?,
+        Value::String(s) if !s.trim().is_empty() => js::string_to_number(s),
+        _ => return None,
+    };
+    f.is_finite().then_some(f)
+}
+
 /// Construit et valide un point de position à partir d'un payload brut.
+///
+/// Toute valeur pouvant faire échouer l'insert est refusée ou neutralisée ici :
+/// l'ack n'étant envoyé qu'après l'écriture, un point inscriptible serait
+/// sinon renvoyé indéfiniment par la tablette.
 pub fn build_location_point(
     device_id: &str,
     body: Option<&Value>,
+) -> Result<Map<String, Value>, &'static str> {
+    build_location_point_at(device_id, body, chrono::Utc::now())
+}
+
+fn build_location_point_at(
+    device_id: &str,
+    body: Option<&Value>,
+    now: chrono::DateTime<chrono::Utc>,
 ) -> Result<Map<String, Value>, &'static str> {
     let field = |name: &str| match body {
         Some(Value::Object(map)) => map.get(name),
         _ => None,
     };
-    let latitude = field("latitude");
-    let longitude = field("longitude");
-    let timestamp = field("timestamp");
-
-    if latitude.is_none() || longitude.is_none() || !js::truthy(timestamp) {
+    let (Some(lat), Some(lon), Some(timestamp)) = (
+        finite_number(field("latitude")),
+        finite_number(field("longitude")),
+        finite_number(field("timestamp")),
+    ) else {
         return Err("Missing required fields");
-    }
-    let lat = js::to_number(latitude);
-    let lon = js::to_number(longitude);
-    // Comparaisons explicites : une coordonnée NaN est acceptée, comme en JS.
-    #[allow(clippy::manual_range_contains)]
-    let out_of_range = lat < -90.0 || lat > 90.0 || lon < -180.0 || lon > 180.0;
-    if out_of_range {
+    };
+    if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
         return Err("Invalid coordinates");
     }
+    let now_ms = now.timestamp_millis();
+    let timestamp = timestamp.trunc() as i64;
+    if timestamp < now_ms - MAX_POINT_AGE_MS || timestamp > now_ms + MAX_POINT_FUTURE_MS {
+        return Err("Invalid timestamp");
+    }
 
-    let optional = |name: &str| field(name).cloned().unwrap_or(Value::Null);
-    let source = field("source")
-        .filter(|v| js::truthy(Some(v)))
-        .cloned()
-        .unwrap_or_else(|| Value::String("unknown".into()));
+    // Champs facultatifs : une valeur non numérique devient `null`.
+    let optional = |name: &str| {
+        finite_number(field(name))
+            .map(js::number_value)
+            .unwrap_or(Value::Null)
+    };
+    let source = match field("source") {
+        Some(Value::String(s)) if !s.is_empty() => s.chars().take(SOURCE_MAX_CHARS).collect(),
+        _ => "unknown".to_string(),
+    };
 
     let mut point = Map::new();
-    point.insert("latitude".into(), latitude.cloned().unwrap_or(Value::Null));
-    point.insert(
-        "longitude".into(),
-        longitude.cloned().unwrap_or(Value::Null),
-    );
-    point.insert(
-        "timestamp".into(),
-        timestamp.cloned().unwrap_or(Value::Null),
-    );
+    point.insert("latitude".into(), js::number_value(lat));
+    point.insert("longitude".into(), js::number_value(lon));
+    point.insert("timestamp".into(), Value::from(timestamp));
     point.insert("device_id".into(), Value::String(device_id.to_string()));
-    point.insert(
-        "updated_at".into(),
-        Value::String(iso_string(chrono::Utc::now())),
-    );
-    point.insert("source".into(), source);
+    point.insert("updated_at".into(), Value::String(iso_string(now)));
+    point.insert("source".into(), Value::String(source));
     point.insert("altitude".into(), optional("altitude"));
     point.insert("accuracy".into(), optional("accuracy"));
     point.insert("speed".into(), optional("speed"));
     point.insert("heading".into(), optional("heading"));
     Ok(point)
+}
+
+/// Vérifie qu'un lot ne contient pas plus de points que la cadence maximale
+/// ne peut en produire sur l'intervalle couvert par ses timestamps (+ 1 s).
+/// La limite porte ainsi sur les positions et non sur les messages : un lot de
+/// rattrapage après coupure passe, un flux trop dense est refusé.
+pub fn batch_density_ok(points: &[Map<String, Value>]) -> bool {
+    let timestamps = points
+        .iter()
+        .filter_map(|p| p.get("timestamp").and_then(Value::as_i64));
+    let (min, max) = timestamps.fold((i64::MAX, i64::MIN), |(lo, hi), t| (lo.min(t), hi.max(t)));
+    if min > max {
+        return true;
+    }
+    let span_secs = ((max - min) as u64).div_ceil(1000) + 1;
+    points.len() as u64 <= u64::from(MAX_POINTS_PER_SEC) * span_secs
 }
 
 /// Résumé d'un point pour les journaux.
@@ -157,39 +202,72 @@ const POINT_COLUMNS: [&str; 9] = [
     "timestamp",
 ];
 
-/// Diffuse le point aux clients web puis l'écrit en base (sans attendre).
-pub fn ingest_location_point(state: &AppState, point: Map<String, Value>) {
-    let point = Value::Object(point);
-    let state = state.clone();
-    tokio::spawn(async move {
-        if let Err(err) = state.io().emit("location_update", &point).await {
-            eprintln!("[GPS] Erreur diffusion location_update: {err}");
-        }
+/// Room Socket.IO des clients web : les positions ne sont pas renvoyées aux
+/// devices GPS (économie de données mobiles).
+pub const WEB_ROOM: &str = "web";
 
-        let mut latest = sqlx::query(
-            "INSERT INTO gps_latest (device_id, latitude, longitude, altitude, accuracy, speed, heading, source, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE latitude=IF(VALUES(timestamp) >= COALESCE(timestamp, 0), VALUES(latitude), latitude), longitude=IF(VALUES(timestamp) >= COALESCE(timestamp, 0), VALUES(longitude), longitude), altitude=IF(VALUES(timestamp) >= COALESCE(timestamp, 0), VALUES(altitude), altitude), accuracy=IF(VALUES(timestamp) >= COALESCE(timestamp, 0), VALUES(accuracy), accuracy), speed=IF(VALUES(timestamp) >= COALESCE(timestamp, 0), VALUES(speed), speed), heading=IF(VALUES(timestamp) >= COALESCE(timestamp, 0), VALUES(heading), heading), source=IF(VALUES(timestamp) >= COALESCE(timestamp, 0), VALUES(source), source), timestamp=GREATEST(COALESCE(timestamp, 0), VALUES(timestamp))",
-        );
-        // À 10 Hz, les écritures (une tâche par point) peuvent se terminer
-        // dans le désordre : `timestamp` est mis à jour en dernier pour que
-        // les IF ci-dessus comparent à l'ancienne valeur, et un point plus
-        // ancien n'écrase jamais la dernière position connue.
-        for column in POINT_COLUMNS {
-            latest = bind_json(latest, point.get(column));
-        }
-        let mut track = sqlx::query(
-            "INSERT INTO gps_track (device_id, latitude, longitude, altitude, accuracy, speed, heading, source, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        );
+/// Écrit les points en base. Le device ne doit être acquitté qu'une fois ce
+/// futur résolu sans erreur : sinon il garde les points et les renverra.
+///
+/// `INSERT IGNORE` + clé unique `(device_id, timestamp)` : un point renvoyé
+/// faute d'ack (timeout réseau) n'est pas enregistré deux fois.
+pub async fn store_points(
+    state: &AppState,
+    points: &[Map<String, Value>],
+) -> Result<(), sqlx::Error> {
+    let Some(newest) = points
+        .iter()
+        .max_by_key(|p| p.get("timestamp").and_then(Value::as_i64))
+    else {
+        return Ok(());
+    };
+
+    let row = format!("({})", vec!["?"; POINT_COLUMNS.len()].join(", "));
+    let track_sql = format!(
+        "INSERT IGNORE INTO gps_track ({}) VALUES {}",
+        POINT_COLUMNS.join(", "),
+        vec![row.as_str(); points.len()].join(", ")
+    );
+    let mut track = sqlx::query(&track_sql);
+    for point in points {
         for column in POINT_COLUMNS {
             track = bind_json(track, point.get(column));
         }
+    }
 
-        let (latest_res, track_res) =
-            tokio::join!(latest.execute(&state.pool), track.execute(&state.pool));
-        if let Err(err) = latest_res {
-            eprintln!("[GPS] Erreur écriture gps_latest: {err}");
-        }
-        if let Err(err) = track_res {
-            eprintln!("[GPS] Erreur écriture gps_track: {err}");
+    let mut latest = sqlx::query(
+        "INSERT INTO gps_latest (device_id, latitude, longitude, altitude, accuracy, speed, heading, source, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE latitude=IF(VALUES(timestamp) >= COALESCE(timestamp, 0), VALUES(latitude), latitude), longitude=IF(VALUES(timestamp) >= COALESCE(timestamp, 0), VALUES(longitude), longitude), altitude=IF(VALUES(timestamp) >= COALESCE(timestamp, 0), VALUES(altitude), altitude), accuracy=IF(VALUES(timestamp) >= COALESCE(timestamp, 0), VALUES(accuracy), accuracy), speed=IF(VALUES(timestamp) >= COALESCE(timestamp, 0), VALUES(speed), speed), heading=IF(VALUES(timestamp) >= COALESCE(timestamp, 0), VALUES(heading), heading), source=IF(VALUES(timestamp) >= COALESCE(timestamp, 0), VALUES(source), source), timestamp=GREATEST(COALESCE(timestamp, 0), VALUES(timestamp))",
+    );
+    // Les écritures de deux messages successifs peuvent se terminer dans le
+    // désordre : `timestamp` est mis à jour en dernier pour que les IF
+    // ci-dessus comparent à l'ancienne valeur, et un point plus ancien
+    // n'écrase jamais la dernière position connue.
+    for column in POINT_COLUMNS {
+        latest = bind_json(latest, newest.get(column));
+    }
+
+    let (track_res, latest_res) =
+        tokio::join!(track.execute(&state.pool), latest.execute(&state.pool));
+    if let Err(err) = &track_res {
+        eprintln!("[GPS] Erreur écriture gps_track: {err}");
+    }
+    if let Err(err) = &latest_res {
+        eprintln!("[GPS] Erreur écriture gps_latest: {err}");
+    }
+    track_res?;
+    latest_res?;
+    Ok(())
+}
+
+/// Diffuse les points enregistrés aux seuls clients web (sans attendre).
+pub fn broadcast_points(state: &AppState, points: Vec<Map<String, Value>>) {
+    let state = state.clone();
+    tokio::spawn(async move {
+        for point in points {
+            let point = Value::Object(point);
+            if let Err(err) = state.io().to(WEB_ROOM).emit("location_update", &point).await {
+                eprintln!("[GPS] Erreur diffusion location_update: {err}");
+            }
         }
     });
 }
@@ -274,6 +352,53 @@ mod tests {
         assert!(limiter.hit("7724").into_result().is_err());
         // Un autre device a son propre quota.
         assert!(limiter.hit("7725").into_result().is_ok());
+    }
+
+    fn point(body: Value) -> Result<Map<String, Value>, &'static str> {
+        let now = chrono::DateTime::from_timestamp_millis(1_800_000_000_000).unwrap();
+        build_location_point_at("7724", Some(&body), now)
+    }
+
+    #[test]
+    fn validation_rejects_invalid_values() {
+        let ts = 1_800_000_000_000_i64;
+        assert!(point(serde_json::json!({ "latitude": 48.1, "longitude": -1.6, "timestamp": ts })).is_ok());
+        // Coordonnées NaN/null/non numériques.
+        assert!(point(serde_json::json!({ "latitude": "NaN", "longitude": -1.6, "timestamp": ts })).is_err());
+        assert!(point(serde_json::json!({ "latitude": null, "longitude": -1.6, "timestamp": ts })).is_err());
+        assert!(point(serde_json::json!({ "latitude": 91, "longitude": -1.6, "timestamp": ts })).is_err());
+        // Timestamp non numérique, trop ancien ou dans le futur.
+        assert!(point(serde_json::json!({ "latitude": 48.1, "longitude": -1.6, "timestamp": "abc" })).is_err());
+        assert!(point(serde_json::json!({ "latitude": 48.1, "longitude": -1.6, "timestamp": ts - 8 * 86_400_000 })).is_err());
+        assert!(point(serde_json::json!({ "latitude": 48.1, "longitude": -1.6, "timestamp": ts + 120_000 })).is_err());
+    }
+
+    #[test]
+    fn validation_neutralizes_optional_fields() {
+        let p = point(serde_json::json!({
+            "latitude": "48.1", "longitude": -1.6, "timestamp": 1_800_000_000_000_i64,
+            "speed": "fast", "heading": 90, "source": "x".repeat(50),
+        }))
+        .unwrap();
+        assert_eq!(p["latitude"], serde_json::json!(48.1));
+        assert_eq!(p["speed"], Value::Null);
+        assert_eq!(p["heading"], serde_json::json!(90));
+        assert_eq!(p["source"].as_str().unwrap().chars().count(), SOURCE_MAX_CHARS);
+    }
+
+    #[test]
+    fn batch_density() {
+        let at = |ts: i64| {
+            let mut p = Map::new();
+            p.insert("timestamp".into(), Value::from(ts));
+            p
+        };
+        // 50 points à 10 Hz (4,9 s) : accepté.
+        let catch_up: Vec<_> = (0..50).map(|i| at(i * 100)).collect();
+        assert!(batch_density_ok(&catch_up));
+        // 50 points sur la même seconde : refusé.
+        let burst: Vec<_> = (0..50).map(|i| at(i * 10)).collect();
+        assert!(!batch_density_ok(&burst));
     }
 
     #[test]

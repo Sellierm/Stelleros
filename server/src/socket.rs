@@ -15,7 +15,10 @@ use socketioxide::socket::DisconnectReason;
 
 use crate::auth;
 use crate::js;
-use crate::location::{build_location_point, ingest_location_point, log_point};
+use crate::location::{
+    MAX_BATCH_POINTS, WEB_ROOM, batch_density_ok, broadcast_points, build_location_point,
+    log_point, store_points,
+};
 use crate::middleware::auth_log;
 use crate::routes::gps::is_ingest_key_valid;
 use crate::sencrop;
@@ -146,37 +149,43 @@ fn setup_gps_socket(s: SocketRef, ip: String, device_id: String) {
             // payload : la position est rejetée et aucun ack n'est envoyé.
             let payload = payload.ok();
             let ack = payload.is_some().then_some(ack);
-            match build_location_point(&event_device, payload.as_ref()) {
+            let reply = match build_location_point(&event_device, payload.as_ref()) {
                 Err(error) => {
                     auth_log(
                         &event_ip,
                         "FAIL",
                         &format!("Position rejetée (socket) : device={event_device} — {error}"),
                     );
-                    if let Some(ack) = ack {
-                        let _ = ack.send(&json!({ "success": false, "message": error }));
-                    }
+                    json!({ "success": false, "message": error })
                 }
                 Ok(_) if state.limiters.device.hit(&event_device).into_result().is_err() => {
                     // Au-delà de 10 Hz : point ignoré, sans log (ce serait
                     // aussi bavard que le flux lui-même).
-                    if let Some(ack) = ack {
-                        let _ = ack.send(&json!({
-                            "success": false,
-                            "message": "Too many location updates for this device",
-                        }));
-                    }
+                    json!({
+                        "success": false,
+                        "message": "Too many location updates for this device",
+                    })
                 }
                 Ok(point) => {
-                    // Ack immédiat avant l'écriture en base : le device a
-                    // seulement besoin de savoir que la position est acceptée.
-                    if let Some(ack) = ack {
-                        let _ = ack.send(&json!({ "success": true }));
-                    }
                     log_point(&state, &event_ip, "socket", &point);
-                    ingest_location_point(&state, point);
+                    let points = vec![point];
+                    store_and_broadcast(&state, points).await
                 }
+            };
+            if let Some(ack) = ack {
+                let _ = ack.send(&reply);
             }
+        },
+    );
+
+    let (event_ip, event_device) = (ip.clone(), device_id.clone());
+    s.on(
+        "location_batch",
+        async move |State(state): State<AppState>,
+                    TryData(payload): TryData<Value>,
+                    ack: AckSender| {
+            let reply = location_batch(&state, &event_ip, &event_device, payload.ok());
+            let _ = ack.send(&reply.await);
         },
     );
 
@@ -190,6 +199,77 @@ fn setup_gps_socket(s: SocketRef, ip: String, device_id: String) {
             ),
         );
     });
+}
+
+/// Écrit les points puis les diffuse ; la réponse sert d'ack au device.
+async fn store_and_broadcast(state: &AppState, points: Vec<Map<String, Value>>) -> Value {
+    match store_points(state, &points).await {
+        Ok(()) => {
+            broadcast_points(state, points);
+            json!({ "success": true })
+        }
+        Err(_) => json!({ "success": false, "message": "Database error" }),
+    }
+}
+
+/// Lot de positions (`{ points: [...] }`), envoyé par la tablette pour
+/// rattraper son retard après une coupure. Un seul ack et un seul insert.
+///
+/// Les points invalides sont écartés (et comptés dans `rejected`) sans faire
+/// échouer le lot : les renvoyer ne les rendrait pas valides. Seuls un lot
+/// malformé, trop dense ou une erreur de base donnent `success: false`, et le
+/// device renvoie alors le lot entier (les doublons sont ignorés en base).
+async fn location_batch(
+    state: &AppState,
+    ip: &str,
+    device_id: &str,
+    payload: Option<Value>,
+) -> Value {
+    let Some(Value::Array(raw)) = payload.as_ref().and_then(|p| p.get("points")) else {
+        return json!({ "success": false, "message": "Invalid batch" });
+    };
+    if raw.len() > MAX_BATCH_POINTS {
+        return json!({ "success": false, "message": "Batch too large" });
+    }
+    if state.limiters.device.hit(device_id).into_result().is_err() {
+        return json!({
+            "success": false,
+            "message": "Too many location updates for this device",
+        });
+    }
+
+    let mut points = Vec::with_capacity(raw.len());
+    let mut rejected = 0;
+    for item in raw {
+        match build_location_point(device_id, Some(item)) {
+            Ok(point) => points.push(point),
+            Err(error) => {
+                rejected += 1;
+                auth_log(
+                    ip,
+                    "FAIL",
+                    &format!("Position rejetée (lot) : device={device_id} — {error}"),
+                );
+            }
+        }
+    }
+    if !batch_density_ok(&points) {
+        return json!({
+            "success": false,
+            "message": "Too many points for the time span",
+        });
+    }
+    for point in &points {
+        log_point(state, ip, "lot", point);
+    }
+
+    let accepted = points.len();
+    let mut reply = store_and_broadcast(state, points).await;
+    if let Value::Object(reply) = &mut reply {
+        reply.insert("accepted".into(), json!(accepted));
+        reply.insert("rejected".into(), json!(rejected));
+    }
+    reply
 }
 
 // ── Client web ────────────────────────────────────────────────────────────
@@ -331,6 +411,8 @@ fn setup_web_socket(s: SocketRef, ip: String, _username: String) {
         "INFO",
         &format!("Socket connecté (id: {})", s.id),
     );
+    // Seuls les clients web reçoivent `location_update`.
+    s.join(WEB_ROOM);
 
     s.on_disconnect(async move |reason: DisconnectReason| {
         auth_log(
