@@ -8,7 +8,7 @@ use subtle::ConstantTimeEq;
 
 use super::require_user;
 use crate::js;
-use crate::location::{self, build_location_point, ingest_location_point, log_point};
+use crate::location::{self, broadcast_points, build_location_point, log_point, store_points};
 use crate::middleware::{
     auth_log, client_ip, fail, json_response, peer_ip, query_values, read_body,
 };
@@ -90,7 +90,11 @@ pub async fn post_location(State(state): State<AppState>, req: Request) -> Respo
     }
 
     log_point(&state, &client_ip, "HTTP", &point);
-    ingest_location_point(&state, point);
+    let points = vec![point];
+    if store_points(&state, &points).await.is_err() {
+        return fail(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error");
+    }
+    broadcast_points(&state, points);
     json_response(StatusCode::OK, json!({ "success": true }))
 }
 
