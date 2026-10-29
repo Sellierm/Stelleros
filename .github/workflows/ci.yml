@@ -1,0 +1,67 @@
+name: CI
+
+# Vérifie chaque PR vers main avant fusion : la fusion déclenche
+# directement le déploiement en prod (deploy.yml).
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+# Un nouveau push sur la PR annule la vérification en cours.
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: Serveur (Rust)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Même version que l'image de build (Dockerfile).
+      - uses: dtolnay/rust-toolchain@1.94
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+
+      - name: Formatage
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --locked
+
+  client:
+    name: Client (React)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Dépendances
+        run: npm ci
+
+      - name: Build
+        run: npm run build
