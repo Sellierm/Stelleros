@@ -266,7 +266,22 @@ The production stack (app, MariaDB, phpMyAdmin) is described in
 `deploy/docker-compose.yml`. On the server it is used through a symlink
 `~/site/docker-compose.yml -> app/deploy/docker-compose.yml`, so that `~/site`
 stays the Compose project directory (see the comments in the file). Run
-Compose commands from `~/site`, never from `deploy/`.
+Compose commands from `~/site`, never from `deploy/`. The pre-production
+stack (`~/site-preprod`, https://sellier-test.duckdns.org) uses the same layout.
+
+Deployments go through `deploy/deploie.sh`, never `docker compose up --build`:
+
+- the image (server and client) is tagged `stelleros:<git tree>`; when
+  pre-production already built that tree (squash-merged PR), production reuses
+  the exact same image instead of rebuilding it;
+- it is then tagged `stelleros:$APP_TAG` (`prod` or `preprod`, from the
+  project's `.env`) and logged in `deploiements.log`;
+- `deploy/retour-arriere.sh` puts the previous image back in service without
+  rebuilding (`--liste` shows deployments and available images). Migrations
+  must stay compatible with the previous code, as they are not rolled back.
+
+The pre-production banner comes from `ENV_LABEL` in its `server/.env`
+(`GET /api/env`), not from the build.
 
 ## GPS sender
 
