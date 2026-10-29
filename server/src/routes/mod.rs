@@ -38,6 +38,17 @@ pub async fn get_config(State(state): State<AppState>, headers: HeaderMap) -> Re
     json_response(StatusCode::OK, Value::Object(body))
 }
 
+/// `GET /api/env` — public : le bandeau s'affiche aussi sur la page de
+/// connexion. Le libellé vient de l'environnement et non du build, pour que
+/// la même image serve en préprod puis en prod.
+pub async fn get_env(State(state): State<AppState>) -> Response {
+    let mut body = Map::new();
+    if let Some(label) = &state.cfg.env_label {
+        body.insert("label".into(), Value::String(label.clone()));
+    }
+    json_response(StatusCode::OK, Value::Object(body))
+}
+
 /// `GET /api/forecast`
 pub async fn get_forecast(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if let Err(res) = require_user(&state, &headers).await {

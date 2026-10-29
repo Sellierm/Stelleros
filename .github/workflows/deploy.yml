@@ -32,8 +32,4 @@ jobs:
             cd ~/site/app
             test "$(git branch --show-current)" = main
             git pull -q --ff-only origin main
-            cd client
-            npm ci --no-audit --no-fund
-            npm run build
-            cd ../..
-            docker compose up -d --build
+            deploy/deploie.sh

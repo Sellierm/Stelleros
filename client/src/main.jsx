@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
+import { loadEnvLabel } from "./lib/envLabel.js";
 import "./theme.css";
 import "./index.css";
 
@@ -16,15 +17,8 @@ try {
   // Stockage indisponible : thème clair par défaut.
 }
 
-// Préprod : VITE_ENV_LABEL (client/.env.production.local, non versionné)
-// affiche un bandeau permanent ; usePageMeta préfixe le titre de l'onglet.
-const envLabel = import.meta.env.VITE_ENV_LABEL;
-if (envLabel) {
-  const banner = document.createElement("div");
-  banner.className = "env-banner";
-  banner.textContent = envLabel;
-  document.body.appendChild(banner);
-}
+// Préprod : bandeau permanent et titre d'onglet préfixé (cf. lib/envLabel.js).
+loadEnvLabel();
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>

@@ -1,3 +1,16 @@
+# Image complète (serveur + client) construite par deploy/deploie.sh à partir
+# du contenu versionné (plus server/modules/, non versionné) : la même image
+# passe de la préprod à la prod.
+
+FROM node:22-bookworm-slim AS client
+
+WORKDIR /usr/src/client
+
+COPY client/package.json client/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY client/ ./
+RUN npm run build
+
 FROM rust:1.94-slim-bookworm AS build
 
 WORKDIR /usr/src/app
@@ -22,7 +35,7 @@ WORKDIR /usr/src/app
 
 COPY --from=build /usr/src/app/target/release/farm-server ./farm-server
 COPY --from=build /usr/src/app/modules ./modules
-COPY client/dist ../client/dist
+COPY --from=client /usr/src/client/dist ../client/dist
 
 EXPOSE 3000
 CMD ["./farm-server"]

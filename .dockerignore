@@ -1,13 +1,11 @@
-node_modules
-npm-debug.log
-.env
+# Secrets et fichiers locaux : jamais dans l'image (client/.env*, server/.env…)
+**/.env
+**/.env.*
+**/node_modules
+**/npm-debug.log
 .git
-client/src
-client/public
-client/node_modules
-client/package.json
-client/package-lock.json
-client/vite.config.js
-client/index.html
+.github
+.claude
+CLAUDE.md
+client/dist
 server/target
-server/node_modules

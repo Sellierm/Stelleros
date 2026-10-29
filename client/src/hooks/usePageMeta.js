@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { withEnvLabel } from "../lib/envLabel.js";
 
 /**
  * Sets document title and favicon to match the original farm app per-page behaviour.
@@ -7,8 +8,7 @@ import { useEffect } from "react";
  */
 export default function usePageMeta(title, favicon) {
   useEffect(() => {
-    const envLabel = import.meta.env.VITE_ENV_LABEL;
-    document.title = envLabel ? `[${envLabel}] ${title}` : title;
+    document.title = withEnvLabel(title);
 
     let link = document.querySelector("link[rel~='icon']");
     if (!link) {

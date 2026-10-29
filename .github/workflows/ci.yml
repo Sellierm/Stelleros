@@ -100,8 +100,4 @@ jobs:
             cd ~/site-preprod/app
             git fetch -q origin "refs/pull/${{ github.event.pull_request.number }}/head"
             git checkout -q --detach "${{ github.event.pull_request.head.sha }}"
-            cd client
-            npm ci --no-audit --no-fund
-            npm run build
-            cd ../..
-            docker compose up -d --build
+            deploy/deploie.sh

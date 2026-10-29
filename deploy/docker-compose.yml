@@ -1,11 +1,11 @@
-# Pile de déploiement (prod, et préprod plus tard).
+# Pile de déploiement, commune à la prod (~/site) et à la préprod (~/site-preprod).
 #
 # Ce fichier n'est pas utilisé depuis le dépôt : il est lu au travers d'un lien
 # symbolique placé dans le dossier parent du dépôt, qui devient le dossier de
 # projet Compose :
 #
 #   ~/site/
-#   ├── .env                  secrets MariaDB (non versionné)
+#   ├── .env                  secrets MariaDB, ports, APP_TAG (non versionné)
 #   ├── docker-compose.yml -> app/deploy/docker-compose.yml
 #   └── app/                  ce dépôt
 #
@@ -16,7 +16,11 @@
 
 services:
   site-app:
-    build: ./app
+    # Image construite par app/deploy/deploie.sh (stelleros:<arbre git>) puis
+    # étiquetée stelleros:${APP_TAG} pour ce projet (prod, preprod). Compose ne
+    # la construit ni ne la télécharge : déployer avec deploie.sh.
+    image: stelleros:${APP_TAG:?APP_TAG doit être défini dans .env (prod ou preprod)}
+    pull_policy: never
     # .env : identifiants MariaDB partagés ; app/server/.env : configuration de
     # l'API (auth, CORS, GPS, Sencrop…), qui n'est pas copiée dans l'image.
     env_file:
