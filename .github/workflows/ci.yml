@@ -65,3 +65,43 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  # Déploie la PR sur https://sellier-test.duckdns.org une fois les
+  # vérifications passées. Branches du dépôt uniquement : une PR venant d'un
+  # fork n'a pas accès aux secrets et n'exécute rien sur le serveur.
+  preprod:
+    name: Déploiement préprod
+    needs: [server, client]
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # Une seule préprod : les déploiements de PR différentes passent l'un
+    # après l'autre, le dernier l'emporte.
+    concurrency:
+      group: preprod
+      cancel-in-progress: false
+
+    steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+
+      # Seuls le numéro de PR et le SHA (valeurs sûres) sont injectés dans le
+      # script, jamais le nom de branche.
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            set -eu
+            cd ~/site-preprod/app
+            git fetch -q origin "refs/pull/${{ github.event.pull_request.number }}/head"
+            git checkout -q --detach "${{ github.event.pull_request.head.sha }}"
+            cd client
+            npm ci --no-audit --no-fund
+            npm run build
+            cd ../..
+            docker compose up -d --build
