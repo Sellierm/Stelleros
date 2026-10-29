@@ -19,6 +19,8 @@ server/                 Rust API and Socket.IO server
 server/src/auth.rs      Better Auth compatible authentication endpoints
 server/src/routes/      API routes (phyto, GPS, config, forecast, SPA)
 server/src/socket.rs    Socket.IO events (web clients and GPS devices)
+server/src/track.rs     GPS history: daily compaction and track simplification
+server/migrations/      Versioned SQL migrations (applied at startup)
 server/schema/auth.sql  Authentication tables
 Dockerfile              Production image definition
 ```
@@ -61,6 +63,7 @@ Set the values in `server/.env`:
 | `CLIENT_DIST` | Optional path to the React build (default `../client/dist`) |
 | `GPS_INGEST_KEY` | Shared key for GPS devices |
 | `GPS_ALLOWED_IDS` | Comma-separated authorized GPS device IDs |
+| `GPS_RETENTION_DAYS` | Optional: GPS history kept for this many days (unset or `0` = forever) |
 | `GOOGLE_MAPS_API_KEY` | Google Maps JavaScript API key |
 | `OPENWEATHER_API_KEY` | OpenWeather API key |
 | `FORECAST_LATITUDE`, `FORECAST_LONGITUDE`, `FORECAST_CITY` | Forecast location |
@@ -274,3 +277,20 @@ POST /api/location
 
 The sender and this API must share the configured GPS ingestion key and
 authorized device IDs.
+
+### GPS history
+
+- Database migrations in `server/migrations/` run automatically at startup
+  (`sqlx migrate`).
+- Every day at 05:00 (Europe/Paris), previous days not yet processed (up to 7
+  days back) are compacted: stationary points and points on straight lines are
+  removed, but every removed point stays within its own measured accuracy
+  (clamped to 2 cm–2 m) of the kept track. Arrival and departure of each stop
+  are kept. Results are logged in the `gps_compaction` table.
+- Older days can be compacted manually:
+
+  ```bash
+  docker exec site-site-app-1 ./farm-server compact-gps 2026-09-07 2026-10-21
+  ```
+
+- The history API applies the same simplification on the fly (current day).

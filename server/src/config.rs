@@ -36,6 +36,8 @@ pub struct Config {
     pub cors_allowed_suffix: String,
     pub gps_ingest_key: Option<String>,
     pub gps_allowed_ids: Vec<String>,
+    /// Durée de conservation de l'historique GPS en jours (`None` = illimitée).
+    pub gps_retention_days: Option<u32>,
     pub db: DbConfig,
     pub google_maps_api_key: Option<String>,
     pub map_plan_urls: Vec<String>,
@@ -165,6 +167,16 @@ impl Config {
         let gps_allowed_ids =
             split_list(&non_empty("GPS_ALLOWED_IDS").unwrap_or_else(|| "6290,7724".into()));
 
+        let gps_retention_days = match non_empty("GPS_RETENTION_DAYS") {
+            Some(v) => Some(
+                v.trim()
+                    .parse::<u32>()
+                    .map_err(|_| format!("GPS_RETENTION_DAYS invalide: {v}"))?,
+            )
+            .filter(|days| *days > 0),
+            None => None,
+        };
+
         let db = DbConfig {
             host: non_empty("DB_HOST").unwrap_or_else(|| "localhost".into()),
             port: match non_empty("DB_PORT") {
@@ -209,6 +221,7 @@ impl Config {
             cors_allowed_suffix,
             gps_ingest_key: non_empty("GPS_INGEST_KEY"),
             gps_allowed_ids,
+            gps_retention_days,
             db,
             google_maps_api_key: env::var("GOOGLE_MAPS_API_KEY").ok(),
             map_plan_urls: map_plan_urls(),

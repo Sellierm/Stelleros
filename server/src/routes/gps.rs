@@ -1,8 +1,7 @@
 use axum::extract::{Request, State};
 use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::Response;
-use chrono::{LocalResult, NaiveDate, TimeZone, Utc};
-use chrono_tz::Europe::Paris;
+use chrono::NaiveDate;
 use serde_json::{Value, json};
 use subtle::ConstantTimeEq;
 
@@ -13,6 +12,7 @@ use crate::middleware::{
     auth_log, client_ip, fail, json_response, peer_ip, query_values, read_body,
 };
 use crate::state::AppState;
+use crate::track::paris_midnight_ms;
 
 /// Comparaison en temps constant de la clé d'ingestion GPS.
 pub fn is_ingest_key_valid(expected: &str, key: Option<&Value>) -> bool {
@@ -22,15 +22,6 @@ pub fn is_ingest_key_valid(expected: &str, key: Option<&Value>) -> bool {
     };
     let expected = expected.as_bytes();
     key.len() == expected.len() && !key.is_empty() && bool::from(key.ct_eq(expected))
-}
-
-/// Minuit (heure de Paris) du jour donné, en ms epoch.
-fn paris_midnight_ms(date: NaiveDate) -> i64 {
-    let naive = date.and_hms_opt(0, 0, 0).unwrap_or_default();
-    match Paris.from_local_datetime(&naive) {
-        LocalResult::Single(dt) | LocalResult::Ambiguous(dt, _) => dt.timestamp_millis(),
-        LocalResult::None => Utc.from_utc_datetime(&naive).timestamp_millis(),
-    }
 }
 
 fn is_date_param(value: &str) -> bool {
@@ -167,15 +158,6 @@ pub async fn positions_dates(State(state): State<AppState>, headers: HeaderMap) 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn paris_day_bounds() {
-        // Heure d'hiver : UTC+1 ; heure d'été : UTC+2.
-        let winter = NaiveDate::from_ymd_opt(2026, 1, 15).unwrap();
-        assert_eq!(paris_midnight_ms(winter), 1_768_431_600_000);
-        let summer = NaiveDate::from_ymd_opt(2026, 7, 15).unwrap();
-        assert_eq!(paris_midnight_ms(summer), 1_784_066_400_000);
-    }
 
     #[test]
     fn ingest_key() {
