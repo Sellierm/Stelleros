@@ -35,6 +35,11 @@ pub fn create_pool(cfg: &DbConfig) -> MySqlPool {
         .connect_lazy_with(options)
 }
 
+/// Applique les migrations de `server/migrations` (embarquées à la compilation).
+pub async fn migrate(pool: &MySqlPool) -> Result<(), sqlx::migrate::MigrateError> {
+    sqlx::migrate!().run(pool).await
+}
+
 /// Interprète une date/heure naïve comme heure locale (comportement mysql2).
 pub fn local_naive_to_utc(naive: NaiveDateTime) -> DateTime<Utc> {
     match Local.from_local_datetime(&naive).earliest() {

@@ -12,6 +12,7 @@ mod routes;
 mod sencrop;
 mod socket;
 mod state;
+mod track;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -73,11 +74,41 @@ fn build_router(state: AppState, socket_layer: socketioxide::layer::SocketIoLaye
         .fallback(routes::fallback)
         .method_not_allowed_fallback(routes::fallback)
         .with_state(state.clone())
+        // Sous la couche Socket.IO : seules les réponses HTTP sont compressées.
+        .layer(tower_http::compression::CompressionLayer::new())
         .layer(socket_layer)
         .layer(axum::middleware::from_fn_with_state(
             state,
             middleware::edge,
         ))
+}
+
+async fn compact_gps_command(state: &AppState, args: &[String]) -> i32 {
+    let parse = |s: Option<&String>| {
+        s.and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+    };
+    let (Some(from), Some(to)) = (parse(args.first()), parse(args.get(1))) else {
+        eprintln!("Usage : farm-server compact-gps AAAA-MM-JJ AAAA-MM-JJ");
+        return 2;
+    };
+    let today = chrono::Utc::now()
+        .with_timezone(&chrono_tz::Europe::Paris)
+        .date_naive();
+    if to >= today {
+        eprintln!("Le jour en cours ne peut pas être compacté (positions encore attendues)");
+        return 2;
+    }
+    if let Err(err) = db::migrate(&state.pool).await {
+        eprintln!("Migrations impossibles : {err}");
+        return 1;
+    }
+    match track::compact_days(state, from, to).await {
+        Ok(()) => 0,
+        Err(err) => {
+            eprintln!("Erreur compaction : {err}");
+            1
+        }
+    }
 }
 
 #[tokio::main]
@@ -101,12 +132,20 @@ async fn main() {
 
     let state: AppState = Arc::new(Inner::new(cfg, pool, http));
 
+    // `farm-server compact-gps AAAA-MM-JJ AAAA-MM-JJ` : compacte une plage de
+    // jours de l'historique GPS puis quitte (rattrapage manuel).
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("compact-gps") {
+        std::process::exit(compact_gps_command(&state, &args[2..]).await);
+    }
+
     let (socket_layer, io) = SocketIo::builder()
         .max_payload(1_000_000)
         .with_state(state.clone())
         .build_layer();
     socket::register(&io);
     state.set_io(io);
+    track::spawn_maintenance(state.clone());
 
     let app = build_router(state, socket_layer);
 

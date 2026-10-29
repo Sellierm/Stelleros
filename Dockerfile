@@ -4,6 +4,7 @@ WORKDIR /usr/src/app
 
 COPY server/Cargo.toml server/Cargo.lock ./
 COPY server/src ./src
+COPY server/migrations ./migrations
 RUN cargo build --release --locked
 
 # Plans de la ferme : modules/mapModule.js (non versionné) s'il existe,

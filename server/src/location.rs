@@ -13,6 +13,7 @@ use serde_json::{Map, Value};
 use crate::db::{self, bind_json, iso_string};
 use crate::js;
 use crate::state::AppState;
+use crate::track::{TrackPoint, simplify};
 
 /// Points acceptés par seconde et par device. Les devices émettent à 10, 5,
 /// 2, 1, 0,5, 0,2 Hz ou toutes les 10 s : 10 Hz nominal + 20 % de marge pour
@@ -256,6 +257,11 @@ pub async fn store_points(
     }
     track_res?;
     latest_res?;
+    // Liste des jours de l'historique : une erreur ici ne doit pas faire
+    // renvoyer les points (déjà enregistrés), la compaction recalcule ces jours.
+    if let Err(err) = crate::track::record_days(state, points).await {
+        eprintln!("[GPS] Erreur écriture gps_days: {err}");
+    }
     Ok(())
 }
 
@@ -298,37 +304,61 @@ pub async fn get_history(
     .fetch_all(&state.pool)
     .await?;
 
-    // Format compact : la trace ne transporte que [lat, lng, timestamp] par
-    // point, seul le dernier point garde toutes ses colonnes (fiche du tracteur).
-    let mut positions = Map::new();
+    // Lignes groupées par device (ordre de la requête).
+    let mut devices: Vec<(String, Vec<Map<String, Value>>)> = Vec::new();
     for row in &rows {
         let row = db::row_to_json(row);
         let key = js::to_js_string(row.get("device_id"));
-        let entry = positions.entry(key).or_insert_with(|| {
-            let mut device = Map::new();
-            device.insert("track".into(), Value::Array(Vec::new()));
-            device.insert("last".into(), Value::Null);
-            Value::Object(device)
-        });
-        let Value::Object(device) = entry else {
-            continue;
-        };
-        let sample = Value::Array(vec![
-            js::number_value(js::to_number(row.get("latitude"))),
-            js::number_value(js::to_number(row.get("longitude"))),
-            js::number_value(js::to_number(row.get("timestamp"))),
-        ]);
-        if let Some(Value::Array(track)) = device.get_mut("track") {
-            track.push(sample);
+        match devices.last_mut() {
+            Some((id, rows)) if *id == key => rows.push(row),
+            _ => devices.push((key, vec![row])),
         }
-        device.insert("last".into(), Value::Object(row));
+    }
+
+    // Format compact : la trace ne transporte que [lat, lng, timestamp] par
+    // point, seul le dernier point garde toutes ses colonnes (fiche du tracteur).
+    // La trace est simplifiée à la précision des mesures (jour en cours, pas
+    // encore compacté) : aucun écart visible, beaucoup moins de points.
+    let mut positions = Map::new();
+    for (key, rows) in devices {
+        let track_points: Vec<TrackPoint> = rows
+            .iter()
+            .map(|row| TrackPoint {
+                latitude: js::to_number(row.get("latitude")),
+                longitude: js::to_number(row.get("longitude")),
+                accuracy: row.get("accuracy").and_then(Value::as_f64),
+                timestamp: row.get("timestamp").and_then(Value::as_i64).unwrap_or(0),
+                source: row.get("source").and_then(Value::as_str).map(str::to_string),
+            })
+            .collect();
+        let kept = tokio::task::spawn_blocking(move || simplify(&track_points))
+            .await
+            .unwrap_or_else(|_| (0..rows.len()).collect());
+        let track: Vec<Value> = kept
+            .iter()
+            .map(|&i| {
+                let row = &rows[i];
+                Value::Array(vec![
+                    js::number_value(js::to_number(row.get("latitude"))),
+                    js::number_value(js::to_number(row.get("longitude"))),
+                    js::number_value(js::to_number(row.get("timestamp"))),
+                ])
+            })
+            .collect();
+        let mut device = Map::new();
+        device.insert("track".into(), Value::Array(track));
+        device.insert(
+            "last".into(),
+            rows.last().cloned().map(Value::Object).unwrap_or(Value::Null),
+        );
+        positions.insert(key, Value::Object(device));
     }
     Ok(js::js_key_order(positions))
 }
 
 pub async fn get_history_dates(state: &AppState) -> Result<Vec<Value>, sqlx::Error> {
     let rows = sqlx::query(
-        "SELECT DISTINCT DATE_FORMAT(FROM_UNIXTIME(timestamp / 1000), '%Y-%m-%d') AS date FROM gps_track ORDER BY date DESC",
+        "SELECT DISTINCT DATE_FORMAT(day, '%Y-%m-%d') AS date FROM gps_days ORDER BY date DESC",
     )
     .fetch_all(&state.pool)
     .await?;
