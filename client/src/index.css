@@ -2,3 +2,20 @@
   width: 100%;
   min-height: 100vh;
 }
+
+/* Bandeau d'environnement (préprod), cf. main.jsx */
+.env-banner {
+  position: fixed;
+  bottom: 8px;
+  left: 8px;
+  z-index: 10000;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: #d9480f;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.05em;
+  pointer-events: none;
+  opacity: 0.9;
+}
