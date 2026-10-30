@@ -1,16 +1,22 @@
 import { useEffect, useRef, useState } from "react";
-import Nav from "../components/Nav.jsx";
-import usePageMeta from "../hooks/usePageMeta.js";
+import Nav from "../components/Nav";
+import usePageMeta from "../hooks/usePageMeta";
+import type { ConfigResponse } from "../types/api";
 import "./GpsPage.css";
 
 class KalmanFilter {
+  R: number;
+  Q: number;
+  P: number;
+  X: number;
+
   constructor(R = 0.01, Q = 3) {
     this.R = R;
     this.Q = Q;
     this.P = 1;
     this.X = 0;
   }
-  update(measurement) {
+  update(measurement: number) {
     this.P += this.Q;
     const K = this.P / (this.P + this.R);
     this.X += K * (measurement - this.X);
@@ -19,8 +25,17 @@ class KalmanFilter {
   }
 }
 
+interface AbPositions {
+  lat: number | null;
+  lng: number | null;
+  latA: number | null;
+  lngA: number | null;
+  latB: number | null;
+  lngB: number | null;
+}
+
 export default function GpsPage() {
-  const mapRef = useRef(null);
+  const mapRef = useRef<HTMLDivElement>(null);
   const [mapsKey, setMapsKey] = useState("");
   const [width, setWidth] = useState(1);
   const [space, setSpace] = useState(1);
@@ -28,7 +43,7 @@ export default function GpsPage() {
   const [mapOpen, setMapOpen] = useState(false);
   const [aDefined, setADefined] = useState(false);
   const [bDefined, setBDefined] = useState(false);
-  const posRef = useRef({
+  const posRef = useRef<AbPositions>({
     lat: null,
     lng: null,
     latA: null,
@@ -40,15 +55,15 @@ export default function GpsPage() {
     lat: new KalmanFilter(),
     lng: new KalmanFilter(),
   });
-  const watchIdRef = useRef(null);
-  const mapIntervalRef = useRef(null);
+  const watchIdRef = useRef<number | null>(null);
+  const mapIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   usePageMeta("Gps", "/assets/icons8-gps-32.png");
 
   useEffect(() => {
     fetch("/api/config", { credentials: "include" })
-      .then((r) => r.json())
-      .then((d) => setMapsKey(d.googleMapsApiKey));
+      .then((r) => r.json() as Promise<ConfigResponse>)
+      .then((d) => setMapsKey(d.googleMapsApiKey ?? ""));
   }, []);
 
   // Watch GPS position
@@ -88,6 +103,11 @@ export default function GpsPage() {
 
   const openMap = () => {
     const { latA, lngA, latB, lngB } = posRef.current;
+    // Point défini avant le premier relevé GPS.
+    if (latA === null || lngA === null || latB === null || lngB === null) {
+      alert("Position GPS indisponible : redéfinir les points A et B.");
+      return;
+    }
     if (
       isNaN(width) ||
       isNaN(space) ||
@@ -103,7 +123,9 @@ export default function GpsPage() {
     }
 
     const initMap = () => {
-      const map = new window.google.maps.Map(mapRef.current, {
+      if (!mapRef.current) return;
+
+      const map = new google.maps.Map(mapRef.current, {
         center: { lat: latB, lng: lngB },
         zoom: 19,
         tilt: 0,
@@ -111,17 +133,17 @@ export default function GpsPage() {
         mapTypeId: "satellite",
       });
 
-      const headingAB = window.google.maps.geometry.spherical.computeHeading(
+      const headingAB = google.maps.geometry.spherical.computeHeading(
         { lat: latA, lng: lngA },
         { lat: latB, lng: lngB },
       );
 
-      const pointC = window.google.maps.geometry.spherical.computeOffset(
+      const pointC = google.maps.geometry.spherical.computeOffset(
         { lat: latA, lng: lngA },
         length,
         headingAB,
       );
-      const pointA = window.google.maps.geometry.spherical.computeOffset(
+      const pointA = google.maps.geometry.spherical.computeOffset(
         { lat: latA, lng: lngA },
         length,
         headingAB + 180,
@@ -130,14 +152,14 @@ export default function GpsPage() {
       // Lignes de guidage
       for (let i = -150; i < 150; i++) {
         const offset = space * i;
-        new window.google.maps.Polyline({
+        new google.maps.Polyline({
           path: [
-            window.google.maps.geometry.spherical.computeOffset(
+            google.maps.geometry.spherical.computeOffset(
               pointA,
               offset,
               headingAB + 90,
             ),
-            window.google.maps.geometry.spherical.computeOffset(
+            google.maps.geometry.spherical.computeOffset(
               pointC,
               offset,
               headingAB + 90,
@@ -151,7 +173,7 @@ export default function GpsPage() {
       }
 
       // Ligne A-B
-      new window.google.maps.Polyline({
+      new google.maps.Polyline({
         path: [pointA, pointC],
         geodesic: true,
         strokeColor: "#00FF00",
@@ -163,11 +185,11 @@ export default function GpsPage() {
       setMapOpen(true);
 
       // Suivi de position
-      const showPosition = (pos) => {
+      const showPosition = (pos: GeolocationPosition) => {
         const lat = kalmanRef.current.lat.update(pos.coords.latitude);
         const lng = kalmanRef.current.lng.update(pos.coords.longitude);
         map.setCenter({ lat, lng });
-        new window.google.maps.Circle({
+        new google.maps.Circle({
           strokeColor: "#FF0000",
           strokeOpacity: 0.8,
           strokeWeight: 2,

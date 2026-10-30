@@ -1,10 +1,27 @@
-import { useEffect, useRef, useState } from "react";
-import Nav from "../components/Nav.jsx";
-import { useSocket } from "../contexts/SocketContext.jsx";
-import usePageMeta from "../hooks/usePageMeta.js";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type RefObject,
+} from "react";
+import type { Chart, ChartConfiguration } from "chart.js";
+import Nav from "../components/Nav";
+import { useSocket } from "../contexts/SocketContext";
+import usePageMeta from "../hooks/usePageMeta";
+import type { DayWindow, SencropRawRow, WeatherSummary } from "../types/api";
 import "./SencropPage.css";
 
-function toDateInputValue(date) {
+type ChartHandle = Pick<Chart, "destroy">;
+// Les créneaux sans mesure restent à undefined (trou dans la courbe).
+type ChartValues = (number | undefined)[];
+type SencropChartConfig = ChartConfiguration<
+  "line" | "bar",
+  ChartValues,
+  string
+>;
+
+function toDateInputValue(date: Date) {
   const local = new Date(date);
   local.setMinutes(local.getMinutes() - local.getTimezoneOffset());
   return local.toJSON().slice(0, 10);
@@ -13,7 +30,7 @@ function toDateInputValue(date) {
 const today = toDateInputValue(new Date());
 
 // [début, fin[ en minuits locaux couvrant `days` jours jusqu'à `value` inclus.
-function localDayWindow(value, days) {
+function localDayWindow(value: string, days: number): DayWindow {
   const start = new Date(`${value}T00:00:00`);
   start.setDate(start.getDate() - (days - 1));
   const end = new Date(`${value}T00:00:00`);
@@ -21,24 +38,26 @@ function localDayWindow(value, days) {
   return [start.toISOString(), end.toISOString()];
 }
 
-function formatShortDate(value) {
+function formatShortDate(value: string) {
   const [, month, day] = value.split("-");
   return `${day}/${month}`;
 }
 
 export default function SencropPage() {
   const socket = useSocket();
-  const chart1Ref = useRef(null);
-  const chart2Ref = useRef(null);
-  const chartInst1 = useRef(null);
-  const chartInst2 = useRef(null);
+  const chart1Ref = useRef<HTMLCanvasElement>(null);
+  const chart2Ref = useRef<HTMLCanvasElement>(null);
+  const chartInst1 = useRef<ChartHandle | null>(null);
+  const chartInst2 = useRef<ChartHandle | null>(null);
   const day1Ref = useRef(today);
   const day2Ref = useRef(today);
   const summaryRequestRef = useRef(0);
 
   const [loading1, setLoading1] = useState(false);
   const [loading2, setLoading2] = useState(false);
-  const [weatherSummary, setWeatherSummary] = useState(null);
+  const [weatherSummary, setWeatherSummary] = useState<WeatherSummary | null>(
+    null,
+  );
 
   usePageMeta(
     "Sencrop",
@@ -120,20 +139,25 @@ export default function SencropPage() {
   useEffect(() => {
     if (!socket) return;
 
-    const drawChart = (canvasRef, instRef, config) => {
+    const drawChart = (
+      canvasRef: RefObject<HTMLCanvasElement>,
+      instRef: MutableRefObject<ChartHandle | null>,
+      config: SencropChartConfig,
+    ) => {
       import("chart.js/auto").then(({ default: Chart }) => {
         if (instRef.current) instRef.current.destroy();
+        if (!canvasRef.current) return;
         instRef.current = new Chart(canvasRef.current, config);
       });
     };
 
-    const buildHoursLabels = (step = 1) => {
+    const buildHoursLabels = () => {
       const labels = [];
       for (let h = 0; h < 24; h++) labels.push(h + "h");
       return labels;
     };
 
-    const buildMinLabels = (step) => {
+    const buildMinLabels = (step: number) => {
       const labels = [];
       let h = 0,
         m = 0;
@@ -149,7 +173,7 @@ export default function SencropPage() {
       return labels;
     };
 
-    const getTodayCutoff = (step) => {
+    const getTodayCutoff = (step: number) => {
       const now = new Date();
       const cutoff = new Date(now);
       cutoff.setSeconds(0, 0);
@@ -157,9 +181,10 @@ export default function SencropPage() {
       return cutoff;
     };
 
-    const toMinuteOfDay = (date) => date.getHours() * 60 + date.getMinutes();
+    const toMinuteOfDay = (date: Date) =>
+      date.getHours() * 60 + date.getMinutes();
 
-    const isTodayInput = (value) => value === today;
+    const isTodayInput = (value: string) => value === today;
 
     // ─ R1 (raincrop hourly) ─
     socket.on("getDataR1", (data, measures) => {
@@ -167,9 +192,9 @@ export default function SencropPage() {
       const labels = buildHoursLabels();
 
       if (measures === "TEMPERATURE,TEMPERATURE_MIN,TEMPERATURE_MAX") {
-        const temps = [],
-          mins = [],
-          maxs = [];
+        const temps: ChartValues = [],
+          mins: ChartValues = [],
+          maxs: ChartValues = [];
         data.forEach((r) => {
           temps.push(r.TEMPERATURE?.value);
           mins.push(r.TEMPERATURE_MIN?.value);
@@ -285,15 +310,16 @@ export default function SencropPage() {
     // ─ R2 (raincrop 15min) ─
     socket.on("getDataR2", (data, measures) => {
       setLoading1(false);
+      if (!Array.isArray(data)) return;
       const labels = buildMinLabels(15);
       const cutoff = isTodayInput(day1Ref.current) ? getTodayCutoff(15) : null;
       const cutoffMinute = cutoff ? toMinuteOfDay(cutoff) : null;
 
       const labelIndexMap = Object.fromEntries(
-        labels.map((label, index) => [label, index]),
+        labels.map((label, index): [string, number] => [label, index]),
       );
-      const vals = new Array(labels.length).fill(undefined);
-      data.forEach((row) => {
+      const vals: ChartValues = new Array(labels.length).fill(undefined);
+      data.forEach((row: SencropRawRow) => {
         const d = new Date(row.date);
         if (toDateInputValue(d) !== day1Ref.current) return;
         const rem = d.getMinutes() % 15;
@@ -347,10 +373,10 @@ export default function SencropPage() {
     socket.on("getDataW1", (data, measures) => {
       setLoading2(false);
       const labels = buildHoursLabels();
-      let vals,
-        label,
-        color,
-        opts = {};
+      let vals: ChartValues,
+        label: string,
+        color: string,
+        opts: SencropChartConfig["options"] = {};
       if (measures === "WIND_SPEED") {
         vals = data.map((r) => r.WIND_SPEED?.value);
         label = "Vitesse (km/h)";
@@ -398,15 +424,16 @@ export default function SencropPage() {
     // ─ W2 (windcrop 10min) ─
     socket.on("getDataW2", (data, measures) => {
       setLoading2(false);
+      if (!Array.isArray(data)) return;
       const labels = buildMinLabels(10);
       const cutoff = isTodayInput(day2Ref.current) ? getTodayCutoff(10) : null;
       const cutoffMinute = cutoff ? toMinuteOfDay(cutoff) : null;
 
       const labelIndexMap = Object.fromEntries(
-        labels.map((label, index) => [label, index]),
+        labels.map((label, index): [string, number] => [label, index]),
       );
-      const vals = new Array(labels.length).fill(undefined);
-      data.forEach((row) => {
+      const vals: ChartValues = new Array(labels.length).fill(undefined);
+      data.forEach((row: SencropRawRow) => {
         const d = new Date(row.date);
         if (toDateInputValue(d) !== day2Ref.current) return;
         const rem = d.getMinutes() % 10;
@@ -507,10 +534,7 @@ export default function SencropPage() {
           </article>
         </section>
 
-        <section
-          className="sencrop-summary"
-          aria-label="Résumé météo"
-        >
+        <section className="sencrop-summary" aria-label="Résumé météo">
           <article className="sencrop-summary-card">
             <span className="sencrop-summary-icon">雨</span>
             <div>

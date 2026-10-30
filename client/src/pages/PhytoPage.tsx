@@ -1,8 +1,52 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import Nav from "../components/Nav.jsx";
-import { useApiFetch } from "../hooks/useApiFetch.js";
-import usePageMeta from "../hooks/usePageMeta.js";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+  type ReactNode,
+} from "react";
+import Nav from "../components/Nav";
+import { useApiFetch } from "../hooks/useApiFetch";
+import usePageMeta from "../hooks/usePageMeta";
+import type {
+  Application,
+  ApplicationPayload,
+  ApplicationProduct,
+  Product,
+  ProductPayload,
+  RawApplication,
+} from "../types/api";
 import "./PhytoPage.css";
+
+type ModalState =
+  | { kind: "add-product" }
+  | { kind: "edit-product"; product: Product }
+  | { kind: "add-application" }
+  | { kind: "edit-application"; application: Application };
+
+type AlertState =
+  | { type: "error"; title: string; message: string; onClose: () => void }
+  | {
+      type: "confirm";
+      title: string;
+      message: string;
+      onConfirm: () => void;
+      onCancel: () => void;
+    };
+
+interface DeleteContext {
+  id: number;
+  date: string;
+  pending: boolean;
+}
+
+// Ligne en cours de saisie : les champs du formulaire renvoient des chaînes.
+interface SelectedProduct {
+  product_id: number | string;
+  quantity_used: number | string | null;
+}
 
 const PRODUCT_CATEGORIES = [
   "Herbicide",
@@ -16,26 +60,42 @@ const PRODUCT_CATEGORIES = [
 
 const PRODUCT_UNITS = ["L", "kg", "g", "ml"];
 
-function fmtDate(value) {
+function fmtDate(value: string | null) {
   if (!value) return "—";
   return new Date(value).toLocaleDateString("fr-FR");
 }
 
 // Minuscules sans accents ; tolère les valeurs nulles venant de la base.
-function normalizeSearch(value) {
+function normalizeSearch(value: string | null) {
   return String(value ?? "")
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase();
 }
 
-function categoryClass(category) {
+function categoryClass(category: string | null) {
   return `pp-badge pp-badge-${String(category || "autre")
     .toLowerCase()
     .replaceAll(" ", "-")}`;
 }
 
-function Modal({ title, onClose, children }) {
+function hasProduct(
+  product: ApplicationProduct | null,
+): product is ApplicationProduct {
+  return Boolean(product?.product_id);
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  return (error instanceof Error && error.message) || fallback;
+}
+
+interface ModalProps {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}
+
+function Modal({ title, onClose, children }: ModalProps) {
   return (
     <div className="pp-overlay" onClick={onClose}>
       <div className="pp-modal" onClick={(e) => e.stopPropagation()}>
@@ -51,8 +111,14 @@ function Modal({ title, onClose, children }) {
   );
 }
 
-function ProductForm({ initial, onSubmit, onCancel }) {
-  const [form, setForm] = useState({
+interface ProductFormProps {
+  initial?: Product;
+  onSubmit: (payload: ProductPayload) => void;
+  onCancel: () => void;
+}
+
+function ProductForm({ initial, onSubmit, onCancel }: ProductFormProps) {
+  const [form, setForm] = useState<ProductPayload>({
     name: initial?.name || "",
     category: initial?.category || PRODUCT_CATEGORIES[0],
     stock: initial?.stock ?? "",
@@ -60,8 +126,14 @@ function ProductForm({ initial, onSubmit, onCancel }) {
     notes: initial?.notes || "",
   });
 
-  const set = (key) => (e) =>
-    setForm((prev) => ({ ...prev, [key]: e.target.value }));
+  const set =
+    (key: keyof ProductPayload) =>
+    (
+      e: ChangeEvent<
+        HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+      >,
+    ) =>
+      setForm((prev) => ({ ...prev, [key]: e.target.value }));
 
   return (
     <form
@@ -136,17 +208,31 @@ function ProductForm({ initial, onSubmit, onCancel }) {
   );
 }
 
-function ApplicationForm({ initial, products, onSubmit, onCancel, onAlert }) {
+interface ApplicationFormProps {
+  initial?: Application;
+  products: Product[];
+  onSubmit: (payload: ApplicationPayload) => void;
+  onCancel: () => void;
+  onAlert: (title: string, message: string) => void;
+}
+
+function ApplicationForm({
+  initial,
+  products,
+  onSubmit,
+  onCancel,
+  onAlert,
+}: ApplicationFormProps) {
   const [date, setDate] = useState(
     initial?.date
       ? initial.date.split("T")[0]
       : new Date().toISOString().split("T")[0],
   );
   const [notes, setNotes] = useState(initial?.notes || "");
-  const [selectedProducts, setSelectedProducts] = useState(
-    initial?.products?.filter((p) => p && p.product_id) || [],
+  const [selectedProducts, setSelectedProducts] = useState<SelectedProduct[]>(
+    initial?.products.filter(hasProduct) ?? [],
   );
-  const [errors, setErrors] = useState({});
+  const [errors, setErrors] = useState<Record<number, string>>({});
 
   const addProduct = () => {
     if (products.length > 0) {
@@ -158,12 +244,16 @@ function ApplicationForm({ initial, products, onSubmit, onCancel, onAlert }) {
     }
   };
 
-  const removeProduct = (index) => {
+  const removeProduct = (index: number) => {
     setSelectedProducts(selectedProducts.filter((_, i) => i !== index));
     setErrors({});
   };
 
-  const updateProduct = (index, field, value) => {
+  const updateProduct = (
+    index: number,
+    field: keyof SelectedProduct,
+    value: string,
+  ) => {
     const updated = [...selectedProducts];
     updated[index] = { ...updated[index], [field]: value };
     setSelectedProducts(updated);
@@ -171,7 +261,7 @@ function ApplicationForm({ initial, products, onSubmit, onCancel, onAlert }) {
   };
 
   const validateProducts = () => {
-    const newErrors = {};
+    const newErrors: Record<number, string> = {};
     selectedProducts.forEach((sp, idx) => {
       if (!sp.quantity_used) return;
       const product = products.find(
@@ -187,15 +277,10 @@ function ApplicationForm({ initial, products, onSubmit, onCancel, onAlert }) {
     return newErrors;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (selectedProducts.length === 0) {
-      onAlert?.({
-        type: "error",
-        title: "Produits requis",
-        message: "Ajoute au moins un produit",
-        onClose: () => {},
-      });
+      onAlert("Produits requis", "Ajoute au moins un produit");
       return;
     }
     const validationErrors = validateProducts();
@@ -265,7 +350,7 @@ function ApplicationForm({ initial, products, onSubmit, onCancel, onAlert }) {
                       placeholder={`Qté (${product?.unit || "unit"})`}
                       min={0}
                       step="0.1"
-                      value={sp.quantity_used}
+                      value={sp.quantity_used ?? ""}
                       onChange={(e) =>
                         updateProduct(idx, "quantity_used", e.target.value)
                       }
@@ -325,17 +410,18 @@ function ApplicationForm({ initial, products, onSubmit, onCancel, onAlert }) {
 export default function PhytoPage() {
   const apiFetch = useApiFetch();
 
-  const [products, setProducts] = useState([]);
-  const [applications, setApplications] = useState([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState(null);
-  const [editTarget, setEditTarget] = useState(null);
+  const [modal, setModal] = useState<ModalState | null>(null);
   const [searchProducts, setSearchProducts] = useState("");
   const [searchApplications, setSearchApplications] = useState("");
-  const [deleteContext, setDeleteContext] = useState(null);
+  const [deleteContext, setDeleteContext] = useState<DeleteContext | null>(
+    null,
+  );
   const [sortProductsBy, setSortProductsBy] = useState("name");
   const [filterApplicationsYear, setFilterApplicationsYear] = useState("");
-  const [alertContext, setAlertContext] = useState(null);
+  const [alertContext, setAlertContext] = useState<AlertState | null>(null);
   const [exporting, setExporting] = useState(false);
 
   usePageMeta("Phyto", "/assets/icons8-champ-32.png");
@@ -344,18 +430,20 @@ export default function PhytoPage() {
     setLoading(true);
     try {
       const [productsData, applicationsData] = await Promise.all([
-        apiFetch("/api/phyto/products"),
-        apiFetch("/api/phyto/applications"),
+        apiFetch<Product[]>("/api/phyto/products"),
+        apiFetch<RawApplication[]>("/api/phyto/applications"),
       ]);
       setProducts(productsData);
-      const normalizedApplications = (applicationsData || []).map((app) => ({
-        ...app,
-        products: Array.isArray(app.products)
-          ? app.products
-          : typeof app.products === "string"
-            ? JSON.parse(app.products)
-            : [],
-      }));
+      const normalizedApplications = (applicationsData || []).map(
+        (app): Application => ({
+          ...app,
+          products: Array.isArray(app.products)
+            ? app.products
+            : typeof app.products === "string"
+              ? JSON.parse(app.products)
+              : [],
+        }),
+      );
       setApplications(normalizedApplications);
     } catch (error) {
       console.error("Erreur chargement phyto:", error);
@@ -375,9 +463,18 @@ export default function PhytoPage() {
     return { lowStockCount };
   }, [products]);
 
+  const showError = (title: string, message: string) => {
+    setAlertContext({
+      type: "error",
+      title,
+      message,
+      onClose: () => setAlertContext(null),
+    });
+  };
+
   // ─── CRUD produits ───────────────────────────────────────────
 
-  const createProduct = async (payload) => {
+  const createProduct = async (payload: ProductPayload) => {
     await apiFetch("/api/phyto/products", {
       method: "POST",
       body: JSON.stringify(payload),
@@ -386,17 +483,16 @@ export default function PhytoPage() {
     await loadData();
   };
 
-  const updateProduct = async (payload) => {
-    await apiFetch(`/api/phyto/products/${editTarget.id}`, {
+  const updateProduct = async (id: number, payload: ProductPayload) => {
+    await apiFetch(`/api/phyto/products/${id}`, {
       method: "PUT",
       body: JSON.stringify(payload),
     });
     setModal(null);
-    setEditTarget(null);
     await loadData();
   };
 
-  const deleteProduct = async (product) => {
+  const deleteProduct = async (product: Product) => {
     setAlertContext({
       type: "confirm",
       title: "Supprimer le produit",
@@ -414,7 +510,7 @@ export default function PhytoPage() {
 
   // ─── CRUD applications ───────────────────────────────────────
 
-  const createApplication = async (payload) => {
+  const createApplication = async (payload: ApplicationPayload) => {
     try {
       await apiFetch("/api/phyto/applications", {
         method: "POST",
@@ -426,34 +522,37 @@ export default function PhytoPage() {
       setAlertContext({
         type: "error",
         title: "Erreur",
-        message:
-          error.message || "Erreur lors de la création de l'intervention",
+        message: errorMessage(
+          error,
+          "Erreur lors de la création de l'intervention",
+        ),
         onClose: () => setAlertContext(null),
       });
     }
   };
 
-  const updateApplication = async (payload) => {
+  const updateApplication = async (id: number, payload: ApplicationPayload) => {
     try {
-      await apiFetch(`/api/phyto/applications/${editTarget.id}`, {
+      await apiFetch(`/api/phyto/applications/${id}`, {
         method: "PUT",
         body: JSON.stringify(payload),
       });
       setModal(null);
-      setEditTarget(null);
       await loadData();
     } catch (error) {
       setAlertContext({
         type: "error",
         title: "Erreur",
-        message:
-          error.message || "Erreur lors de la mise à jour de l'intervention",
+        message: errorMessage(
+          error,
+          "Erreur lors de la mise à jour de l'intervention",
+        ),
         onClose: () => setAlertContext(null),
       });
     }
   };
 
-  const deleteApplication = async (application) => {
+  const deleteApplication = async (application: Application) => {
     setDeleteContext({
       id: application.id,
       date: application.date,
@@ -461,7 +560,8 @@ export default function PhytoPage() {
     });
   };
 
-  const confirmDeleteApplication = async (restoreStock) => {
+  const confirmDeleteApplication = async (restoreStock: boolean) => {
+    if (!deleteContext) return;
     const { id } = deleteContext;
     try {
       await apiFetch(
@@ -476,7 +576,7 @@ export default function PhytoPage() {
       setAlertContext({
         type: "error",
         title: "Erreur",
-        message: error.message || "Erreur lors de la suppression",
+        message: errorMessage(error, "Erreur lors de la suppression"),
         onClose: () => {
           setAlertContext(null);
           setDeleteContext(null);
@@ -585,9 +685,7 @@ export default function PhytoPage() {
     const query = normalizeSearch(searchApplications.trim());
     if (query) {
       filtered = filtered.filter((app) => {
-        const productNames = (app.products || [])
-          .map((p) => p?.product_name)
-          .join(" ");
+        const productNames = app.products.map((p) => p?.product_name).join(" ");
         return (
           normalizeSearch(fmtDate(app.date)).includes(query) ||
           normalizeSearch(productNames).includes(query) ||
@@ -601,7 +699,9 @@ export default function PhytoPage() {
           new Date(app.date).getFullYear() === Number(filterApplicationsYear),
       );
     }
-    return [...filtered].sort((a, b) => new Date(b.date) - new Date(a.date));
+    return [...filtered].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+    );
   }, [applications, searchApplications, filterApplicationsYear]);
 
   // ─── Render ──────────────────────────────────────────────────
@@ -642,7 +742,7 @@ export default function PhytoPage() {
                 )}
                 <button
                   className="pp-btn pp-btn-primary"
-                  onClick={() => setModal("add-product")}
+                  onClick={() => setModal({ kind: "add-product" })}
                 >
                   + Produit
                 </button>
@@ -700,10 +800,9 @@ export default function PhytoPage() {
                         >
                           <button
                             className="pp-icon-btn"
-                            onClick={() => {
-                              setEditTarget(product);
-                              setModal("edit-product");
-                            }}
+                            onClick={() =>
+                              setModal({ kind: "edit-product", product })
+                            }
                             title="Modifier"
                           >
                             ✏️
@@ -760,7 +859,7 @@ export default function PhytoPage() {
                 )}
                 <button
                   className="pp-btn pp-btn-primary"
-                  onClick={() => setModal("add-application")}
+                  onClick={() => setModal({ kind: "add-application" })}
                   disabled={products.length === 0}
                 >
                   + Intervention
@@ -817,7 +916,7 @@ export default function PhytoPage() {
                         </div>
                         <div className="pp-product-meta-row">
                           {application.products
-                            ?.filter((p) => p && p.product_id)
+                            .filter(hasProduct)
                             .map((p, idx) => (
                               <span
                                 key={idx}
@@ -831,10 +930,9 @@ export default function PhytoPage() {
                       <div className="pp-card-actions">
                         <button
                           className="pp-icon-btn"
-                          onClick={() => {
-                            setEditTarget(application);
-                            setModal("edit-application");
-                          }}
+                          onClick={() =>
+                            setModal({ kind: "edit-application", application })
+                          }
                           title="Modifier"
                         >
                           ✏️
@@ -848,20 +946,18 @@ export default function PhytoPage() {
                         </button>
                       </div>
                     </div>
-                    {application.products
-                      ?.filter((p) => p && p.product_id)
-                      .map((p, idx) => (
-                        <div key={idx} className="pp-product-meta-row">
-                          <span>{p.product_name}</span>
-                          {p.quantity_used != null && (
-                            <span className="pp-inline-meta">
-                              — {p.quantity_used}{" "}
-                              {products.find((pr) => pr.id === p.product_id)
-                                ?.unit || ""}
-                            </span>
-                          )}
-                        </div>
-                      ))}
+                    {application.products.filter(hasProduct).map((p, idx) => (
+                      <div key={idx} className="pp-product-meta-row">
+                        <span>{p.product_name}</span>
+                        {p.quantity_used != null && (
+                          <span className="pp-inline-meta">
+                            — {p.quantity_used}{" "}
+                            {products.find((pr) => pr.id === p.product_id)
+                              ?.unit || ""}
+                          </span>
+                        )}
+                      </div>
+                    ))}
                     {application.notes ? (
                       <div className="pp-notes">{application.notes}</div>
                     ) : null}
@@ -915,7 +1011,7 @@ export default function PhytoPage() {
         </Modal>
       )}
 
-      {modal === "add-product" && (
+      {modal?.kind === "add-product" && (
         <Modal title="Ajouter un produit phyto" onClose={() => setModal(null)}>
           <ProductForm
             onSubmit={createProduct}
@@ -924,35 +1020,37 @@ export default function PhytoPage() {
         </Modal>
       )}
 
-      {modal === "edit-product" && editTarget && (
+      {modal?.kind === "edit-product" && (
         <Modal title="Modifier le produit" onClose={() => setModal(null)}>
           <ProductForm
-            initial={editTarget}
-            onSubmit={updateProduct}
+            initial={modal.product}
+            onSubmit={(payload) => updateProduct(modal.product.id, payload)}
             onCancel={() => setModal(null)}
           />
         </Modal>
       )}
 
-      {modal === "add-application" && (
+      {modal?.kind === "add-application" && (
         <Modal title="Ajouter une intervention" onClose={() => setModal(null)}>
           <ApplicationForm
             products={products}
             onSubmit={createApplication}
             onCancel={() => setModal(null)}
-            onAlert={setAlertContext}
+            onAlert={showError}
           />
         </Modal>
       )}
 
-      {modal === "edit-application" && editTarget && (
+      {modal?.kind === "edit-application" && (
         <Modal title="Modifier l'intervention" onClose={() => setModal(null)}>
           <ApplicationForm
-            initial={editTarget}
+            initial={modal.application}
             products={products}
-            onSubmit={updateApplication}
+            onSubmit={(payload) =>
+              updateApplication(modal.application.id, payload)
+            }
             onCancel={() => setModal(null)}
-            onAlert={setAlertContext}
+            onAlert={showError}
           />
         </Modal>
       )}

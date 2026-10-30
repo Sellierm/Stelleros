@@ -1,6 +1,6 @@
 # Stelleros
 
-Stelleros is a farm-management application built with React, Vite, a Rust
+Stelleros is a farm-management application built with React, TypeScript, Vite, a Rust
 API (axum, Socket.IO via socketioxide, sqlx) and MariaDB/MySQL.
 
 The application provides:
@@ -14,7 +14,7 @@ The application provides:
 ## Project structure
 
 ```text
-client/                 React/Vite frontend
+client/                 React/Vite frontend (TypeScript)
 server/                 Rust API and Socket.IO server
 server/src/auth.rs      Better Auth compatible authentication endpoints
 server/src/routes/      API routes (phyto, GPS, config, forecast, SPA)

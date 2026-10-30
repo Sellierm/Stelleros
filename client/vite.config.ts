@@ -9,7 +9,9 @@ const logError = logger.error;
 logger.error = (msg, options) => {
   if (
     msg.includes("ws proxy") &&
-    ["ECONNABORTED", "ECONNRESET", "EPIPE"].includes(options?.error?.code)
+    ["ECONNABORTED", "ECONNRESET", "EPIPE"].includes(
+      (options?.error as NodeJS.ErrnoException | undefined)?.code ?? "",
+    )
   ) {
     return;
   }

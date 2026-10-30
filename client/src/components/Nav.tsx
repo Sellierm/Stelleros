@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
-import { useAuth } from "../contexts/AuthContext.jsx";
+import { useAuth } from "../contexts/AuthContext";
 import "./Nav.css";
 
 export default function Nav() {
@@ -20,7 +20,7 @@ export default function Nav() {
 
   useEffect(() => {
     if (!menuOpen) return;
-    const onKeyDown = (e) => {
+    const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") setMenuOpen(false);
     };
     document.addEventListener("keydown", onKeyDown);
@@ -58,7 +58,7 @@ export default function Nav() {
   };
 
   // Get current page name for the logo (matches original navname)
-  const pageNames = {
+  const pageNames: Record<string, string> = {
     "/forecast": "Forecast",
     "/sencrop": "Sencrop",
     "/fields": "Fields",
@@ -73,7 +73,8 @@ export default function Nav() {
   };
 
   // Match original: active link gets 'highlight' class
-  const linkClass = ({ isActive }) => (isActive ? "link highlight" : "link");
+  const linkClass = ({ isActive }: { isActive: boolean }) =>
+    isActive ? "link highlight" : "link";
 
   return (
     <header className={menuOpen ? "menu-open" : undefined}>

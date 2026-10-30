@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import Nav from "../components/Nav.jsx";
-import usePageMeta from "../hooks/usePageMeta.js";
+import type { Chart } from "chart.js";
+import Nav from "../components/Nav";
+import usePageMeta from "../hooks/usePageMeta";
+import type { DailyForecast, ForecastResponse } from "../types/api";
 import "./ForecastPage.css";
+
+// Seule la destruction des graphiques est utile une fois créés.
+type ChartHandle = Pick<Chart, "destroy">;
 
 const DAYS = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
 const MONTHS = [
@@ -22,27 +27,34 @@ const DIRECTIONS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function fmtTime(dt) {
+function fmtTime(dt: number) {
   const d = new Date(dt * 1000);
   const h = d.getHours();
   return h === 0 ? d.getDate() + " " + MONTHS[d.getMonth()] : h + "h";
 }
 
-function pad2(n) {
+function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
 
 // ── DayDetail component ───────────────────────────────────────────────────────
 
-function DayDetail({ day, dailyData, onClose, onChangeDay }) {
-  const scrollerRef = useRef(null);
+interface DayDetailProps {
+  day: DailyForecast;
+  dailyData: DailyForecast[];
+  onClose: () => void;
+  onChangeDay: (day: DailyForecast) => void;
+}
+
+function DayDetail({ day, dailyData, onClose, onChangeDay }: DayDetailProps) {
+  const scrollerRef = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       const scroller = scrollerRef.current;
       if (!scroller) return;
 
-      const activeElement = scroller.querySelector("li.active");
+      const activeElement = scroller.querySelector<HTMLElement>("li.active");
       if (activeElement) {
         const containerWidth = scroller.clientWidth;
         const elementWidth = activeElement.offsetWidth;
@@ -208,18 +220,22 @@ function DayDetail({ day, dailyData, onClose, onChangeDay }) {
 // ── ForecastPage ──────────────────────────────────────────────────────────────
 
 export default function ForecastPage() {
-  const lineChartRef = useRef(null);
-  const yAxisRef = useRef(null);
+  const lineChartRef = useRef<HTMLCanvasElement>(null);
+  const yAxisRef = useRef<HTMLCanvasElement>(null);
   const [loading, setLoading] = useState(true);
-  const [forecastData, setForecastData] = useState(null);
-  const [selectedDay, setSelectedDay] = useState(null);
-  const chartInstances = useRef({});
+  const [forecastData, setForecastData] = useState<ForecastResponse | null>(
+    null,
+  );
+  const [selectedDay, setSelectedDay] = useState<DailyForecast | null>(null);
+  const chartInstances = useRef<{ line?: ChartHandle; scale?: ChartHandle }>(
+    {},
+  );
 
   usePageMeta("Forecast", "/assets/icons8-weather-forecast-32.png");
 
   useEffect(() => {
     fetch("/api/forecast", { credentials: "include" })
-      .then((r) => r.json())
+      .then((r) => r.json() as Promise<ForecastResponse>)
       .then((data) => {
         setForecastData(data);
         setLoading(false);
@@ -232,6 +248,8 @@ export default function ForecastPage() {
     if (!forecastData || loading) return;
 
     import("chart.js/auto").then(({ default: Chart }) => {
+      if (!yAxisRef.current || !lineChartRef.current) return;
+
       const theme = getComputedStyle(document.documentElement);
       const mutedColor =
         theme.getPropertyValue("--app-muted").trim() || "#6f837c";

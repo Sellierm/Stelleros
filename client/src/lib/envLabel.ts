@@ -2,10 +2,10 @@
 // il n'est pas intégré au build, pour que la même image serve en préprod puis
 // en prod.
 
-let envLabel = null;
+let envLabel: string | null = null;
 
 /** Préfixe un titre d'onglet avec le libellé d'environnement, s'il y en a un. */
-export function withEnvLabel(title) {
+export function withEnvLabel(title: string) {
   return envLabel ? `[${envLabel}] ${title}` : title;
 }
 
@@ -14,7 +14,7 @@ export async function loadEnvLabel() {
   try {
     const res = await fetch("/api/env");
     if (!res.ok) return;
-    const { label } = await res.json();
+    const { label }: { label?: string } = await res.json();
     if (!label) return;
     envLabel = label;
     document.title = withEnvLabel(document.title);
