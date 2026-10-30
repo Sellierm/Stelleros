@@ -264,10 +264,10 @@ frontend changes.
 
 The production stack (app, MariaDB, phpMyAdmin) is described in
 `deploy/docker-compose.yml`. On the server it is used through a symlink
-`~/site/docker-compose.yml -> app/deploy/docker-compose.yml`, so that `~/site`
+`~/stacks/site/docker-compose.yml -> app/deploy/docker-compose.yml`, so that `~/stacks/site`
 stays the Compose project directory (see the comments in the file). Run
-Compose commands from `~/site`, never from `deploy/`. The pre-production
-stack (`~/site-preprod`, https://sellier-test.duckdns.org) uses the same layout.
+Compose commands from `~/stacks/site`, never from `deploy/`. The pre-production
+stack (`~/stacks/site-preprod`, https://sellier-test.duckdns.org) uses the same layout.
 
 Deployments go through `deploy/deploie.sh`, never `docker compose up --build`:
 

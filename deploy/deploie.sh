@@ -54,7 +54,7 @@ echo "$(date -u +%FT%TZ) $tree $commit $origin" >>"$project_dir/deploiements.log
 echo "$target = stelleros:$tree (commit $commit, image $origin)."
 
 # Ménage : on garde les $keep derniers arbres déployés de chaque projet
-# (prod et préprod partagent les images : ~/site*/deploiements.log). Les dates
+# (prod et préprod partagent les images : ~/stacks/site*/deploiements.log). Les dates
 # des images ne servent pas : les builds reproductibles les rendent identiques.
 # Une image encore étiquetée prod/preprod ne perd que son étiquette d'arbre.
 kept=$(for f in "$(dirname "$project_dir")"/*/deploiements.log; do

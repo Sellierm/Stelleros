@@ -7,11 +7,11 @@
 # sur de vraies données avant qu'elles n'atteignent la prod.
 #
 # Usage : deploy/copie-base-prod.sh
-# Dossiers (projets Compose) : PROD_DIR (~/site), PREPROD_DIR (~/site-preprod).
+# Dossiers (projets Compose) : PROD_DIR (~/stacks/site), PREPROD_DIR (~/stacks/site-preprod).
 set -euo pipefail
 
-prod_dir=$(realpath "${PROD_DIR:-$HOME/site}")
-preprod_dir=$(realpath "${PREPROD_DIR:-$HOME/site-preprod}")
+prod_dir=$(realpath "${PROD_DIR:-$HOME/stacks/site}")
+preprod_dir=$(realpath "${PREPROD_DIR:-$HOME/stacks/site-preprod}")
 
 if [ "$prod_dir" = "$preprod_dir" ]; then
   echo "PROD_DIR et PREPROD_DIR désignent le même dossier : abandon." >&2

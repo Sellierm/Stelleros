@@ -1,15 +1,15 @@
-# Pile de déploiement, commune à la prod (~/site) et à la préprod (~/site-preprod).
+# Pile de déploiement, commune à la prod (~/stacks/site) et à la préprod (~/stacks/site-preprod).
 #
 # Ce fichier n'est pas utilisé depuis le dépôt : il est lu au travers d'un lien
 # symbolique placé dans le dossier parent du dépôt, qui devient le dossier de
 # projet Compose :
 #
-#   ~/site/
+#   ~/stacks/site/
 #   ├── .env                  secrets MariaDB, ports, APP_TAG (non versionné)
 #   ├── docker-compose.yml -> app/deploy/docker-compose.yml
 #   └── app/                  ce dépôt
 #
-# Les chemins ci-dessous sont donc relatifs à ~/site, et le nom du projet
+# Les chemins ci-dessous sont donc relatifs à ~/stacks/site, et le nom du projet
 # (préfixe des conteneurs et du volume db-data) est le nom de ce dossier.
 # Ne pas lancer `docker compose` depuis app/deploy/ : ce serait un autre projet,
 # avec une base vide.
