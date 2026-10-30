@@ -29,7 +29,7 @@ jobs:
           # si le dossier de prod n'est pas sur main ou a divergé.
           script: |
             set -eu
-            cd ~/site/app
+            cd ~/stacks/site/app
             test "$(git branch --show-current)" = main
             git pull -q --ff-only origin main
             deploy/deploie.sh

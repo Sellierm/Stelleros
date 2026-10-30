@@ -97,7 +97,7 @@ jobs:
           port: 22
           script: |
             set -eu
-            cd ~/site-preprod/app
+            cd ~/stacks/site-preprod/app
             git fetch -q origin "refs/pull/${{ github.event.pull_request.number }}/head"
             git checkout -q --detach "${{ github.event.pull_request.head.sha }}"
             deploy/deploie.sh
