@@ -1,10 +1,29 @@
 import { useEffect, useRef, useState } from "react";
-import Nav from "../components/Nav.jsx";
-import { useSocket } from "../contexts/SocketContext.jsx";
-import usePageMeta from "../hooks/usePageMeta.js";
+import Nav from "../components/Nav";
+import { useSocket } from "../contexts/SocketContext";
+import usePageMeta from "../hooks/usePageMeta";
+import type {
+  ConfigResponse,
+  GpsPoint,
+  LatestPositionsResponse,
+  PositionsDatesResponse,
+  PositionsHistoryResponse,
+} from "../types/api";
+import type {
+  CoverageResult,
+  CoverageTrack,
+  CoverageWorkerRequest,
+  CoverageWorkerResponse,
+  FieldRings,
+  LatLngPoint,
+} from "../utils/coverageCalculator";
 import "./FieldsPage.css";
 
-const CROP_COLORS = {
+type LatLngLiteral = google.maps.LatLngLiteral;
+type AdvancedMarker = google.maps.marker.AdvancedMarkerElement;
+type HistoryByDevice = Record<string, { path: LatLngPoint[]; last: GpsPoint }>;
+
+const CROP_COLORS: Record<string, string> = {
   Blé: "rgb(255, 234, 0)",
   Betteraves: "rgb(165, 39, 20)",
   Colza: "rgb(156, 39, 176)",
@@ -27,7 +46,7 @@ const todayParis = () => PARIS_DATE_FORMAT.format(new Date());
 // Fréquence de rafraîchissement du panneau latéral en temps réel
 const GPS_PANEL_REFRESH_MS = 1000;
 
-const normalizeCultureName = (str) => {
+const normalizeCultureName = (str: string) => {
   if (!str) return "N/A";
   str = str.toLowerCase();
   // Remove angle brackets if any HTML slipped through
@@ -43,24 +62,26 @@ const normalizeCultureName = (str) => {
   return "N/A";
 };
 
-const parseKmlCoordinates = (coordinatesNode) => {
+const parseKmlCoordinates = (coordinatesNode: Element | undefined) => {
   if (!coordinatesNode) return [];
-  return coordinatesNode.textContent
+  return (coordinatesNode.textContent ?? "")
     .trim()
     .split(/\s+/)
     .map((tuple) => {
       const [lng, lat] = tuple.split(",").map(Number);
       return { lat, lng };
     })
-    .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+    .filter(
+      (point) => Number.isFinite(point.lat) && Number.isFinite(point.lng),
+    );
 };
 
 // Pour l'affichage seulement : écarte les points à moins d'environ 1 m du
 // précédent (tracteur à l'arrêt, dérive GPS). Le calcul de surface garde tout.
 const DISPLAY_MIN_STEP_DEG = 1e-5;
-const simplifyDisplayPath = (path) => {
-  const simplified = [];
-  let previous = null;
+const simplifyDisplayPath = (path: LatLngPoint[]) => {
+  const simplified: LatLngLiteral[] = [];
+  let previous: LatLngLiteral | null = null;
   for (const { lat, lng } of path) {
     if (
       previous &&
@@ -73,13 +94,13 @@ const simplifyDisplayPath = (path) => {
     simplified.push(previous);
   }
   const last = path[path.length - 1];
-  if (previous.lat !== last.lat || previous.lng !== last.lng) {
+  if (previous && (previous.lat !== last.lat || previous.lng !== last.lng)) {
     simplified.push({ lat: last.lat, lng: last.lng });
   }
   return simplified;
 };
 
-const getFieldOverlayStyle = (culture, selectedCrop) => {
+const getFieldOverlayStyle = (culture: string, selectedCrop: string | null) => {
   const isSelected = selectedCrop && culture === selectedCrop;
   return {
     fillOpacity: selectedCrop ? (isSelected ? 0.75 : 0.3) : 0.5,
@@ -91,12 +112,12 @@ const getFieldOverlayStyle = (culture, selectedCrop) => {
 
 export default function FieldsPage() {
   const socket = useSocket();
-  const mapRef = useRef(null);
+  const mapRef = useRef<HTMLDivElement>(null);
   const [year, setYear] = useState(new Date().getFullYear());
   const yearRef = useRef(year);
   const [selectedDate, setSelectedDate] = useState("");
   const selectedDateRef = useRef(selectedDate);
-  const [availableDates, setAvailableDates] = useState([]);
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
 
   // Synchronise yearRef.current with year
   useEffect(() => {
@@ -109,35 +130,49 @@ export default function FieldsPage() {
 
   const [mapsKey, setMapsKey] = useState("");
   const [mapInfo, setMapInfo] = useState(["", ""]);
-  const [totalHa, setTotalHa] = useState(null);
-  const [cropTotals, setCropTotals] = useState({});
-  const [selectedCrop, setSelectedCrop] = useState(null);
-  const [gpsPositions, setGpsPositions] = useState({});
+  const [totalHa, setTotalHa] = useState<string | null>(null);
+  const [cropTotals, setCropTotals] = useState<Record<string, number>>({});
+  const [selectedCrop, setSelectedCrop] = useState<string | null>(null);
+  const [gpsPositions, setGpsPositions] = useState<Record<string, GpsPoint>>(
+    {},
+  );
   const [showPdtInfo, setShowPdtInfo] = useState(false);
   const [arePanelsVisible, setArePanelsVisible] = useState(true);
-  const [implementWidths, setImplementWidths] = useState({});
-  const [availableTrackDevices, setAvailableTrackDevices] = useState([]);
-  const [coverageResult, setCoverageResult] = useState(null);
+  const [implementWidths, setImplementWidths] = useState<
+    Record<string, CoverageTrack["widthM"]>
+  >({});
+  const [availableTrackDevices, setAvailableTrackDevices] = useState<string[]>(
+    [],
+  );
+  const [coverageResult, setCoverageResult] = useState<CoverageResult | null>(
+    null,
+  );
   const [coverageError, setCoverageError] = useState("");
   const [calculatingCoverage, setCalculatingCoverage] = useState(false);
 
-  const mapInstanceRef = useRef(null);
-  const gpsMarkersRef = useRef([]);
-  const markerPositionsRef = useRef({});
-  const gpsPolylinesRef = useRef([]);
-  const gpsSignaturesRef = useRef({});
-  const gpsPollIntervalRef = useRef(null);
-  const pendingGpsPositionsRef = useRef({});
-  const activeDeviceIdRef = useRef(null);
-  const activeInfoWindowRef = useRef(null);
-  const markerByDeviceRef = useRef({});
-  const infoWindowByDeviceRef = useRef({});
-  const fieldPolygonsRef = useRef([]);
-  const fieldOverlaysRef = useRef([]);
-  const trackPointsByDeviceRef = useRef({});
+  const mapInstanceRef = useRef<google.maps.Map | null>(null);
+  const gpsMarkersRef = useRef<AdvancedMarker[]>([]);
+  const markerPositionsRef = useRef<Record<string, LatLngLiteral>>({});
+  const gpsPolylinesRef = useRef<google.maps.Polyline[]>([]);
+  const gpsSignaturesRef = useRef<Record<string, string>>({});
+  const gpsPollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
+  const pendingGpsPositionsRef = useRef<Record<string, GpsPoint>>({});
+  const activeDeviceIdRef = useRef<string | null>(null);
+  const activeInfoWindowRef = useRef<google.maps.InfoWindow | null>(null);
+  const markerByDeviceRef = useRef<Record<string, AdvancedMarker>>({});
+  const infoWindowByDeviceRef = useRef<Record<string, google.maps.InfoWindow>>(
+    {},
+  );
+  const fieldPolygonsRef = useRef<FieldRings[]>([]);
+  const fieldOverlaysRef = useRef<
+    { overlay: google.maps.Polygon; culture: string }[]
+  >([]);
+  const trackPointsByDeviceRef = useRef<Record<string, LatLngPoint[]>>({});
   const historyRequestIdRef = useRef(0);
-  const coverageWorkerRef = useRef(null);
-  const historyCacheRef = useRef(new Map());
+  const coverageWorkerRef = useRef<Worker | null>(null);
+  const historyCacheRef = useRef(new Map<string, HistoryByDevice>());
 
   const selectedCropRef = useRef(selectedCrop);
 
@@ -152,13 +187,13 @@ export default function FieldsPage() {
 
   useEffect(() => {
     fetch("/api/config", { credentials: "include" })
-      .then((r) => r.json())
-      .then((d) => setMapsKey(d.googleMapsApiKey));
+      .then((r) => r.json() as Promise<ConfigResponse>)
+      .then((d) => setMapsKey(d.googleMapsApiKey ?? ""));
   }, []);
 
   useEffect(() => {
     fetch("/api/positions-dates", { credentials: "include" })
-      .then((r) => r.json())
+      .then((r) => r.json() as Promise<PositionsDatesResponse>)
       .then((data) => {
         if (!data.success || !Array.isArray(data.dates)) return;
         setAvailableDates(data.dates);
@@ -175,7 +210,9 @@ export default function FieldsPage() {
   useEffect(() => {
     if (!socket) return;
     socket.on("getPlan", (src) => initGoogleMap(src));
-    return () => socket.off("getPlan");
+    return () => {
+      socket.off("getPlan");
+    };
   }, [socket, mapsKey]);
 
   // ── WebSocket : mise à jour temps réel des positions GPS ──────────────────
@@ -187,13 +224,13 @@ export default function FieldsPage() {
 
     if (!isCurrentYear || !isToday) return;
 
-    const handleLocationUpdate = (point) => {
+    const handleLocationUpdate = (point: GpsPoint) => {
       const map = mapInstanceRef.current;
       if (!map) return;
 
       const deviceId = String(point.device_id);
-      const lat = parseFloat(point.latitude);
-      const lng = parseFloat(point.longitude);
+      const lat = point.latitude;
+      const lng = point.longitude;
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
 
       // À 10 Hz, les points peuvent arriver dans le désordre : on ignore
@@ -258,7 +295,7 @@ export default function FieldsPage() {
     return () => document.body.classList.remove("body-overflow-hidden");
   }, []);
 
-  const changeYear = (y) => {
+  const changeYear = (y: number) => {
     setYear(y);
     yearRef.current = y; // Update synchronously!
     if (socket) socket.emit("askPlan", y);
@@ -269,7 +306,7 @@ export default function FieldsPage() {
     changeDate(nextDate);
   };
 
-  const changeDate = (date) => {
+  const changeDate = (date: string) => {
     setSelectedDate(date);
     selectedDateRef.current = date;
     cancelCoverage();
@@ -287,7 +324,7 @@ export default function FieldsPage() {
     if (socket && mapsKey) socket.emit("askPlan", year);
   }, [socket, mapsKey]); // eslint-disable-line
 
-  const getTrailColor = (deviceId) => {
+  const getTrailColor = (deviceId: string) => {
     const palette = [
       "#ff6b00",
       "#1976d2",
@@ -302,11 +339,15 @@ export default function FieldsPage() {
   };
 
   // ── Polyligne : map par device pour pouvoir étendre en temps réel ─────────
-  const polylinesMapRef = useRef({});
+  const polylinesMapRef = useRef<Record<string, google.maps.Polyline>>({});
 
-  const appendToPolyline = (map, deviceId, newPos) => {
+  const appendToPolyline = (
+    map: google.maps.Map,
+    deviceId: string,
+    newPos: LatLngLiteral,
+  ) => {
     if (!polylinesMapRef.current[deviceId]) {
-      const polyline = new window.google.maps.Polyline({
+      const polyline = new google.maps.Polyline({
         path: [newPos],
         geodesic: false,
         strokeColor: getTrailColor(deviceId),
@@ -318,11 +359,13 @@ export default function FieldsPage() {
       gpsPolylinesRef.current.push(polyline);
     } else {
       const path = polylinesMapRef.current[deviceId].getPath();
-      path.push(new window.google.maps.LatLng(newPos.lat, newPos.lng));
+      path.push(new google.maps.LatLng(newPos.lat, newPos.lng));
     }
   };
 
-  const fetchPositionHistory = async (date) => {
+  const fetchPositionHistory = async (
+    date: string,
+  ): Promise<HistoryByDevice | null> => {
     const cached = historyCacheRef.current.get(date);
     if (cached) return cached;
 
@@ -330,10 +373,10 @@ export default function FieldsPage() {
       `/api/positions-history?date=${encodeURIComponent(date)}`,
       { credentials: "include" },
     );
-    const data = await res.json();
+    const data = (await res.json()) as PositionsHistoryResponse;
     if (!data.success) return null;
 
-    const historyByDevice = {};
+    const historyByDevice: HistoryByDevice = {};
     for (const [deviceId, { track = [], last }] of Object.entries(
       data.positions || {},
     )) {
@@ -353,7 +396,12 @@ export default function FieldsPage() {
   };
 
   // Réutilise le marqueur existant du tracteur plutôt que de le recréer.
-  const placeMarker = (map, deviceId, position, point) => {
+  const placeMarker = (
+    map: google.maps.Map,
+    deviceId: string,
+    position: LatLngLiteral,
+    point: GpsPoint,
+  ) => {
     const marker = markerByDeviceRef.current[deviceId];
     if (!marker) {
       createMarker(map, deviceId, position, point);
@@ -366,7 +414,7 @@ export default function FieldsPage() {
     );
   };
 
-  const removeMarkersExcept = (deviceIds) => {
+  const removeMarkersExcept = (deviceIds: Set<string>) => {
     for (const [deviceId, marker] of Object.entries(
       markerByDeviceRef.current,
     )) {
@@ -381,7 +429,10 @@ export default function FieldsPage() {
     );
   };
 
-  const loadPositionHistory = async (map, date = selectedDateRef.current) => {
+  const loadPositionHistory = async (
+    map: google.maps.Map,
+    date = selectedDateRef.current,
+  ) => {
     if (!map || !date) return;
 
     const requestId = ++historyRequestIdRef.current;
@@ -399,7 +450,7 @@ export default function FieldsPage() {
       trackPointsByDeviceRef.current = {};
       removeMarkersExcept(new Set(Object.keys(historyByDevice)));
 
-      const historicalPositions = {};
+      const historicalPositions: Record<string, GpsPoint> = {};
       for (const [deviceId, { path, last }] of Object.entries(
         historyByDevice,
       )) {
@@ -413,7 +464,7 @@ export default function FieldsPage() {
         markerPositionsRef.current[deviceId] = lastPosition;
         placeMarker(map, deviceId, lastPosition, last);
 
-        const polyline = new window.google.maps.Polyline({
+        const polyline = new google.maps.Polyline({
           path: simplifyDisplayPath(path),
           geodesic: false,
           strokeColor: getTrailColor(deviceId),
@@ -434,7 +485,7 @@ export default function FieldsPage() {
     }
   };
 
-  const buildInfoWindowContent = (deviceId, pos) => {
+  const buildInfoWindowContent = (deviceId: string, pos: GpsPoint) => {
     const speedKmh = pos.speed != null ? (pos.speed * 3.6).toFixed(1) : null;
     const headingStr =
       pos.heading != null ? `${Number(pos.heading).toFixed(0)}°` : null;
@@ -445,7 +496,7 @@ export default function FieldsPage() {
     return `
       <div class="tractor-info-window">
         <strong>Device ID:</strong> ${deviceId}<br/>
-        <strong>Position:</strong> ${parseFloat(pos.latitude).toFixed(6)}, ${parseFloat(pos.longitude).toFixed(6)}<br/>
+        <strong>Position:</strong> ${pos.latitude.toFixed(6)}, ${pos.longitude.toFixed(6)}<br/>
         ${pos.altitude != null ? `<strong>Altitude:</strong> ${Number(pos.altitude).toFixed(1)}m<br/>` : ""}
         ${accuracyStr ? `<strong>Précision:</strong> ${accuracyStr}<br/>` : ""}
         ${speedKmh ? `<strong>Vitesse:</strong> ${speedKmh} km/h<br/>` : ""}
@@ -455,7 +506,12 @@ export default function FieldsPage() {
       </div>`;
   };
 
-  const createMarker = (map, deviceId, position, pos) => {
+  const createMarker = (
+    map: google.maps.Map,
+    deviceId: string,
+    position: LatLngLiteral,
+    pos: GpsPoint,
+  ) => {
     const tractorIcon = document.createElement("img");
     if (deviceId === "7724") tractorIcon.src = "/assets/tracteur_red.png";
     else if (deviceId === "6290") tractorIcon.src = "/assets/tracteur.png";
@@ -464,14 +520,14 @@ export default function FieldsPage() {
     tractorIcon.style.height = "40px";
     tractorIcon.style.cursor = "pointer";
 
-    const marker = new window.google.maps.marker.AdvancedMarkerElement({
+    const marker = new google.maps.marker.AdvancedMarkerElement({
       position,
       map,
       title: `Device: ${deviceId}`,
       content: tractorIcon,
     });
 
-    const infoWindow = new window.google.maps.InfoWindow({
+    const infoWindow = new google.maps.InfoWindow({
       content: buildInfoWindowContent(deviceId, pos),
     });
 
@@ -487,14 +543,17 @@ export default function FieldsPage() {
     infoWindowByDeviceRef.current[deviceId] = infoWindow;
   };
 
-  const loadGPSPositions = async (map, forceRefresh = false) => {
+  const loadGPSPositions = async (
+    map: google.maps.Map,
+    forceRefresh = false,
+  ) => {
     try {
       if (yearRef.current !== new Date().getFullYear()) return false;
 
       const res = await fetch("/api/latest-positions", {
         credentials: "include",
       });
-      const data = await res.json();
+      const data = (await res.json()) as LatestPositionsResponse;
 
       // Double check in case year changed during fetch
       if (yearRef.current !== new Date().getFullYear()) return false;
@@ -502,9 +561,9 @@ export default function FieldsPage() {
       if (!data.success || !map) return false;
 
       const positions = data.positions || {};
-      const nextSignatures = {};
+      const nextSignatures: Record<string, string> = {};
       for (const deviceId in positions) {
-        const pos = positions[deviceId] || {};
+        const pos = positions[deviceId];
         nextSignatures[deviceId] =
           String(pos.timestamp || "") +
           "|" +
@@ -527,18 +586,18 @@ export default function FieldsPage() {
       gpsSignaturesRef.current = nextSignatures;
 
       // Vider les anciens marqueurs
-      gpsMarkersRef.current.forEach((m) => m.setMap(null));
+      activeInfoWindowRef.current?.close();
+      gpsMarkersRef.current.forEach((m) => {
+        m.map = null;
+      });
       gpsMarkersRef.current = [];
       markerByDeviceRef.current = {};
       infoWindowByDeviceRef.current = {};
 
-      const newGps = {};
+      const newGps: Record<string, GpsPoint> = {};
       for (const deviceId in positions) {
         const pos = positions[deviceId];
-        const position = {
-          lat: parseFloat(pos.latitude),
-          lng: parseFloat(pos.longitude),
-        };
+        const position = { lat: pos.latitude, lng: pos.longitude };
         markerPositionsRef.current[deviceId] = position;
         newGps[deviceId] = pos;
         createMarker(map, deviceId, position, pos);
@@ -570,12 +629,14 @@ export default function FieldsPage() {
     }
   };
 
-  const initGoogleMap = (src) => {
+  const initGoogleMap = (src: string | null) => {
     if (!mapsKey) return;
 
     const loadMap = () => {
-      const map = new window.google.maps.Map(mapRef.current, {
-        center: new window.google.maps.LatLng(50.39977, 3.040901),
+      if (!mapRef.current) return;
+
+      const map = new google.maps.Map(mapRef.current, {
+        center: new google.maps.LatLng(50.39977, 3.040901),
         zoom: 14,
         mapTypeId: "satellite",
         streetViewControl: false,
@@ -586,6 +647,8 @@ export default function FieldsPage() {
 
       const loadKml = async () => {
         try {
+          if (!src) throw new Error("No KML plan for this year");
+
           const response = await fetch(src);
           if (!response.ok) {
             throw new Error(`KML request failed with HTTP ${response.status}`);
@@ -600,8 +663,8 @@ export default function FieldsPage() {
           const placemarks = kmlDoc.getElementsByTagName("Placemark");
 
           let total = 0;
-          let cTotals = {};
-          const fieldPolygons = [];
+          const cTotals: Record<string, number> = {};
+          const fieldPolygons: FieldRings[] = [];
           fieldOverlaysRef.current.forEach(({ overlay }) =>
             overlay.setMap(null),
           );
@@ -611,9 +674,10 @@ export default function FieldsPage() {
             let surface = 0;
             let cultureStr = "";
 
-            const desc = placemarks[i].getElementsByTagName("description")[0];
+            const desc: Element | undefined =
+              placemarks[i].getElementsByTagName("description")[0];
             if (desc) {
-              const m = desc.textContent.match(
+              const m = desc.textContent?.match(
                 /Surface\s*\(Ha\)\s*:\s*([\d.,]+)/i,
               );
               if (m) {
@@ -626,12 +690,15 @@ export default function FieldsPage() {
               if (extendedData[j].getAttribute("name") === "Culture") {
                 const valueTag =
                   extendedData[j].getElementsByTagName("value")[0];
-                if (valueTag) cultureStr = valueTag.textContent;
+                if (valueTag) cultureStr = valueTag.textContent ?? "";
               }
             }
 
             if (!cultureStr && desc) {
-              const plainDesc = desc.textContent.replace(/<[^>]+>/g, "\n");
+              const plainDesc = (desc.textContent ?? "").replace(
+                /<[^>]+>/g,
+                "\n",
+              );
               const mC = plainDesc.match(/Culture\s*:\s*([^\n]+)/i);
               if (mC) cultureStr = mC[1].trim();
             }
@@ -658,7 +725,7 @@ export default function FieldsPage() {
                 .filter((hole) => hole.length >= 3);
               if (points.length >= 3) {
                 fieldPolygons.push({ outer: points, holes });
-                const overlay = new window.google.maps.Polygon({
+                const overlay = new google.maps.Polygon({
                   paths: [points, ...holes],
                   map,
                   strokeColor: CROP_COLORS[cultureName] || "#ffffff",
@@ -697,7 +764,7 @@ export default function FieldsPage() {
           setCropTotals(cTotals);
           fieldPolygonsRef.current = fieldPolygons;
           if (fieldPolygons.length > 0) {
-            const bounds = new window.google.maps.LatLngBounds();
+            const bounds = new google.maps.LatLngBounds();
             fieldPolygons.forEach(({ outer }) =>
               outer.forEach((point) => bounds.extend(point)),
             );
@@ -754,7 +821,7 @@ export default function FieldsPage() {
     };
   }, []);
 
-  const centerOnDevice = (deviceId) => {
+  const centerOnDevice = (deviceId: string) => {
     if (mapInstanceRef.current && markerPositionsRef.current[deviceId]) {
       mapInstanceRef.current.setCenter(markerPositionsRef.current[deviceId]);
       const marker = markerByDeviceRef.current[deviceId];
@@ -768,14 +835,15 @@ export default function FieldsPage() {
     }
   };
 
-  const formatSpeed = (pos) => {
+  const formatSpeed = (pos: GpsPoint) => {
     if (pos.speed == null) return null;
     return `${(pos.speed * 3.6).toFixed(1)} km/h`;
   };
 
-  const getImplementWidth = (deviceId) => implementWidths[deviceId] ?? 3;
+  const getImplementWidth = (deviceId: string) =>
+    implementWidths[deviceId] ?? 3;
 
-  const setDeviceWidth = (deviceId, value) => {
+  const setDeviceWidth = (deviceId: string, value: string) => {
     setImplementWidths((previous) => ({ ...previous, [deviceId]: value }));
   };
 
@@ -801,16 +869,18 @@ export default function FieldsPage() {
       return;
     }
 
-    const tracksWithWidth = availableTrackDevices.map((deviceId) => ({
-      deviceId,
-      points: trackPointsByDeviceRef.current[deviceId],
-      widthM: getImplementWidth(deviceId),
-    }));
+    const tracksWithWidth = availableTrackDevices.map(
+      (deviceId): CoverageTrack => ({
+        deviceId,
+        points: trackPointsByDeviceRef.current[deviceId],
+        widthM: getImplementWidth(deviceId),
+      }),
+    );
 
     cancelCoverage();
     setCalculatingCoverage(true);
     const worker = new Worker(
-      new URL("../utils/coverageWorker.js", import.meta.url),
+      new URL("../utils/coverageWorker.ts", import.meta.url),
       { type: "module" },
     );
     coverageWorkerRef.current = worker;
@@ -821,8 +891,8 @@ export default function FieldsPage() {
       }
       setCalculatingCoverage(false);
     };
-    worker.onmessage = ({ data }) => {
-      if (data.error) setCoverageError(data.error);
+    worker.onmessage = ({ data }: MessageEvent<CoverageWorkerResponse>) => {
+      if ("error" in data) setCoverageError(data.error);
       else setCoverageResult(data.result);
       finish();
     };
@@ -833,7 +903,7 @@ export default function FieldsPage() {
     worker.postMessage({
       fieldPolygons: fieldPolygonsRef.current,
       tracks: tracksWithWidth,
-    });
+    } satisfies CoverageWorkerRequest);
   };
 
   return (
@@ -1010,7 +1080,7 @@ export default function FieldsPage() {
                   <p className="coverage-error">{coverageError}</p>
                 </div>
               )}
-              {coverageResult?.warnings?.length > 0 && (
+              {coverageResult && coverageResult.warnings.length > 0 && (
                 <div className="lin">
                   <p className="coverage-warning">
                     {coverageResult.warnings.join(" · ")}

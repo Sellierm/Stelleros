@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App.jsx";
-import { loadEnvLabel } from "./lib/envLabel.js";
+import App from "./App";
+import { loadEnvLabel } from "./lib/envLabel";
 import "./theme.css";
 import "./index.css";
 
@@ -20,7 +20,7 @@ try {
 // Préprod : bandeau permanent et titre d'onglet préfixé (cf. lib/envLabel.js).
 loadEnvLabel();
 
-ReactDOM.createRoot(document.getElementById("root")).render(
+ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />
   </React.StrictMode>,

@@ -1,11 +1,18 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import { io } from "socket.io-client";
-import { useAuth } from "./AuthContext.jsx";
+import { useAuth } from "./AuthContext";
+import type { AppSocket } from "../types/socket";
 
-const SocketContext = createContext(null);
+const SocketContext = createContext<AppSocket | null>(null);
 
-export function SocketProvider({ children }) {
-  const [socket, setSocket] = useState(null);
+export function SocketProvider({ children }: { children: ReactNode }) {
+  const [socket, setSocket] = useState<AppSocket | null>(null);
   const { authenticated, loading } = useAuth();
 
   const usePollingOnly =
@@ -22,7 +29,7 @@ export function SocketProvider({ children }) {
       return;
     }
 
-    const s = io({
+    const s: AppSocket = io({
       withCredentials: true,
       transports: usePollingOnly ? ["polling"] : ["websocket", "polling"],
     });

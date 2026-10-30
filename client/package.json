@@ -5,19 +5,25 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b",
     "preview": "vite preview"
   },
   "dependencies": {
-    "chart.js": "^4.4.0",
     "better-auth": "^1.7.7",
+    "chart.js": "^4.4.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^7.18.3",
     "socket.io-client": "^4.5.1"
   },
   "devDependencies": {
+    "@types/google.maps": "^3.66.9",
+    "@types/node": "^22.20.5",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.2.0",
+    "typescript": "~5.9",
     "vite": "^7.3.7"
   }
 }

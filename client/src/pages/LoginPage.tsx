@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../contexts/AuthContext.jsx";
-import usePageMeta from "../hooks/usePageMeta.js";
+import { useAuth } from "../contexts/AuthContext";
+import usePageMeta from "../hooks/usePageMeta";
 import "./LoginPage.css";
 
 export default function LoginPage() {
@@ -29,7 +29,7 @@ export default function LoginPage() {
     return null;
   }
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");
     const result = await login(username, password);

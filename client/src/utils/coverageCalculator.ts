@@ -1,3 +1,61 @@
+export interface LatLngPoint {
+  lat: number;
+  lng: number;
+  t?: number;
+}
+
+export interface FieldRings {
+  outer: LatLngPoint[];
+  holes?: LatLngPoint[][];
+}
+
+// Contour simple [{lat, lng}, ...] ou { outer, holes }.
+export type FieldPolygon = LatLngPoint[] | FieldRings;
+
+export interface CoverageTrack {
+  deviceId: string;
+  points: LatLngPoint[];
+  // Valeur saisie dans le formulaire : chaîne possible, convertie au calcul.
+  widthM: number | string;
+}
+
+export interface CoverageResult {
+  totalAreaM2: number;
+  totalAreaHa: number;
+  fieldsProcessed: number;
+  devicesUsed: string[];
+  warnings: string[];
+}
+
+export interface CoverageWorkerRequest {
+  fieldPolygons: FieldPolygon[];
+  tracks: CoverageTrack[];
+}
+
+export type CoverageWorkerResponse =
+  { result: CoverageResult } | { error: string };
+
+interface PointM {
+  x: number;
+  y: number;
+  t?: number;
+}
+
+interface FieldM {
+  outer: PointM[];
+  holes: PointM[][];
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+interface TrackM {
+  deviceId: string;
+  widthM: number;
+  segments: [PointM, PointM][];
+}
+
 const EARTH_RADIUS_M = 6371000;
 const DEG2RAD = Math.PI / 180;
 const MAX_GRID_CELLS_PER_FIELD = 4_000_000;
@@ -10,14 +68,19 @@ const MIN_WORKING_SPEED_MS = 0.2;
 // Segments plus rapides ignorés (saut GPS aberrant).
 const MAX_WORKING_SPEED_MS = 15;
 
-function projectToMeters(lat, lon, refLat, refLon) {
+function projectToMeters(
+  lat: number,
+  lon: number,
+  refLat: number,
+  refLon: number,
+) {
   const x =
     EARTH_RADIUS_M * (lon - refLon) * DEG2RAD * Math.cos(refLat * DEG2RAD);
   const y = EARTH_RADIUS_M * (lat - refLat) * DEG2RAD;
   return { x, y };
 }
 
-function pointInRing(point, ring) {
+function pointInRing(point: PointM, ring: PointM[]) {
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
     const xi = ring[i].x;
@@ -32,7 +95,7 @@ function pointInRing(point, ring) {
   return inside;
 }
 
-function pointInField(point, field) {
+function pointInField(point: PointM, field: FieldM) {
   if (
     point.x < field.minX ||
     point.x > field.maxX ||
@@ -47,7 +110,12 @@ function pointInField(point, field) {
   );
 }
 
-function squaredDistanceToSegment(px, py, start, end) {
+function squaredDistanceToSegment(
+  px: number,
+  py: number,
+  start: PointM,
+  end: PointM,
+) {
   const dx = end.x - start.x;
   const dy = end.y - start.y;
   const lengthSq = dx * dx + dy * dy;
@@ -61,9 +129,11 @@ function squaredDistanceToSegment(px, py, start, end) {
   return cx * cx + cy * cy;
 }
 
-function isWorkingSegment(start, end) {
+const isTimestamp = (t: number | undefined): t is number => Number.isFinite(t);
+
+function isWorkingSegment(start: PointM, end: PointM) {
   const length = Math.hypot(end.x - start.x, end.y - start.y);
-  if (!Number.isFinite(start.t) || !Number.isFinite(end.t)) {
+  if (!isTimestamp(start.t) || !isTimestamp(end.t)) {
     return length <= MAX_SEGMENT_LENGTH_M;
   }
   const durationMs = end.t - start.t;
@@ -72,7 +142,12 @@ function isWorkingSegment(start, end) {
   return speed >= MIN_WORKING_SPEED_MS && speed <= MAX_WORKING_SPEED_MS;
 }
 
-function computeFieldCoverage(field, previousFields, tracks, cellSizeM) {
+function computeFieldCoverage(
+  field: FieldM,
+  previousFields: FieldM[],
+  tracks: TrackM[],
+  cellSizeM: number,
+) {
   const { minX, minY, maxX, maxY } = field;
   const columns = Math.ceil((maxX - minX) / cellSizeM);
   const rows = Math.ceil((maxY - minY) / cellSizeM);
@@ -115,7 +190,9 @@ function computeFieldCoverage(field, previousFields, tracks, cellSizeM) {
           const index = row * columns + column;
           if (covered[index]) continue;
           const cellX = minX + (column + 0.5) * cellSizeM;
-          if (squaredDistanceToSegment(cellX, cellY, start, end) <= halfWidthSq) {
+          if (
+            squaredDistanceToSegment(cellX, cellY, start, end) <= halfWidthSq
+          ) {
             covered[index] = 1;
           }
         }
@@ -147,7 +224,7 @@ function computeFieldCoverage(field, previousFields, tracks, cellSizeM) {
   return clippedCells * cellSizeM * cellSizeM;
 }
 
-function toFieldRings(fieldPolygon) {
+function toFieldRings(fieldPolygon: FieldPolygon) {
   // Accepte un contour simple [{lat, lng}, ...] ou { outer, holes }.
   if (Array.isArray(fieldPolygon)) return { outer: fieldPolygon, holes: [] };
   return {
@@ -157,10 +234,10 @@ function toFieldRings(fieldPolygon) {
 }
 
 export function computeCoverageArea(
-  fieldPolygonsLatLng,
-  tracksWithWidth,
+  fieldPolygonsLatLng: FieldPolygon[],
+  tracksWithWidth: CoverageTrack[],
   cellSizeM = 1,
-) {
+): CoverageResult {
   if (!Array.isArray(fieldPolygonsLatLng) || fieldPolygonsLatLng.length === 0) {
     throw new Error("Aucun contour de champ disponible");
   }
@@ -181,12 +258,12 @@ export function computeCoverageArea(
   // Projection unique pour toute l'exploitation : les champs partagent le même
   // repère, ce qui permet de détecter leurs chevauchements.
   const ref = rawFields[0].outer[0];
-  const project = (point) => ({
+  const project = (point: LatLngPoint): PointM => ({
     ...projectToMeters(point.lat, point.lng, ref.lat, ref.lng),
     t: point.t,
   });
 
-  const fields = rawFields.map(({ outer, holes }) => {
+  const fields = rawFields.map(({ outer, holes }): FieldM => {
     const outerM = outer.map(project);
     let minX = Infinity;
     let minY = Infinity;
@@ -210,8 +287,8 @@ export function computeCoverageArea(
     };
   });
 
-  const warnings = [];
-  const validTracks = [];
+  const warnings: string[] = [];
+  const validTracks: TrackM[] = [];
   for (const track of tracksWithWidth) {
     const width = Number(track.widthM);
     if (!Number.isFinite(width) || width <= 0 || width > 30) {
@@ -221,7 +298,7 @@ export function computeCoverageArea(
     if (!Array.isArray(track.points) || track.points.length < 2) continue;
 
     const pointsM = track.points.map(project);
-    const segments = [];
+    const segments: TrackM["segments"] = [];
     for (let i = 0; i < pointsM.length - 1; i++) {
       if (isWorkingSegment(pointsM[i], pointsM[i + 1])) {
         segments.push([pointsM[i], pointsM[i + 1]]);
