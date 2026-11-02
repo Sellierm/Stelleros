@@ -321,8 +321,9 @@ pub async fn get_history(
         }
     }
 
-    // Format compact : la trace ne transporte que [lat, lng, timestamp] par
-    // point, seul le dernier point garde toutes ses colonnes (fiche du tracteur).
+    // Format compact : la trace ne transporte que [lat, lng, timestamp,
+    // précision, source] par point (voir `history_entry`), seul le dernier
+    // point garde toutes ses colonnes (fiche du tracteur).
     // La trace est simplifiée à la précision des mesures (jour en cours, pas
     // encore compacté) : aucun écart visible, beaucoup moins de points.
     let mut positions = Map::new();
@@ -343,17 +344,7 @@ pub async fn get_history(
         let kept = tokio::task::spawn_blocking(move || simplify(&track_points))
             .await
             .unwrap_or_else(|_| (0..rows.len()).collect());
-        let track: Vec<Value> = kept
-            .iter()
-            .map(|&i| {
-                let row = &rows[i];
-                Value::Array(vec![
-                    js::number_value(js::to_number(row.get("latitude"))),
-                    js::number_value(js::to_number(row.get("longitude"))),
-                    js::number_value(js::to_number(row.get("timestamp"))),
-                ])
-            })
-            .collect();
+        let track: Vec<Value> = kept.iter().map(|&i| history_entry(&rows[i])).collect();
         let mut device = Map::new();
         device.insert("track".into(), Value::Array(track));
         device.insert(
@@ -366,6 +357,25 @@ pub async fn get_history(
         positions.insert(key, Value::Object(device));
     }
     Ok(js::js_key_order(positions))
+}
+
+/// Point de la trace d'historique : `[lat, lng, timestamp, précision, source]`,
+/// précision et source à `null` si inconnues. Le calcul de couverture du client
+/// s'en sert pour écarter les positions imprécises (réseau, GPS interne dégradé).
+fn history_entry(row: &Map<String, Value>) -> Value {
+    let field = |key: &str, keep: fn(&Value) -> bool| {
+        row.get(key)
+            .filter(|v| keep(v))
+            .cloned()
+            .unwrap_or(Value::Null)
+    };
+    Value::Array(vec![
+        js::number_value(js::to_number(row.get("latitude"))),
+        js::number_value(js::to_number(row.get("longitude"))),
+        js::number_value(js::to_number(row.get("timestamp"))),
+        field("accuracy", Value::is_number),
+        field("source", Value::is_string),
+    ])
 }
 
 pub async fn get_history_dates(state: &AppState) -> Result<Vec<Value>, sqlx::Error> {
@@ -383,6 +393,25 @@ pub async fn get_history_dates(state: &AppState) -> Result<Vec<Value>, sqlx::Err
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn history_entry_carries_accuracy_and_source() {
+        let row = serde_json::json!({
+            "device_id": "7724", "latitude": 50.4, "longitude": 3.05, "altitude": 52,
+            "accuracy": 9.94, "source": "GPS Interne", "timestamp": 1_800_000_000_000_i64,
+        });
+        assert_eq!(
+            history_entry(row.as_object().unwrap()),
+            serde_json::json!([50.4, 3.05, 1_800_000_000_000_i64, 9.94, "GPS Interne"])
+        );
+        let bare = serde_json::json!({
+            "latitude": 50.4, "longitude": 3.05, "accuracy": null, "timestamp": 1,
+        });
+        assert_eq!(
+            history_entry(bare.as_object().unwrap()),
+            serde_json::json!([50.4, 3.05, 1, null, null])
+        );
+    }
     use crate::middleware::RateLimiter;
 
     #[test]
