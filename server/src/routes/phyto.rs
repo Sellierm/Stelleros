@@ -335,7 +335,8 @@ async fn insert_application_products(
         "INSERT INTO phyto_application_products (application_id, product_id, quantity_used) VALUES {}",
         placeholders(products.len(), 3)
     );
-    let mut query = sqlx::query(&sql);
+    // SQL dynamique audité : uniquement des `?` (valeurs liées par bind).
+    let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
     for p in products {
         let product_id = prop(p, "product_id")?;
         let quantity = prop(p, "quantity_used")?;
@@ -390,7 +391,8 @@ async fn create_application_tx(
             "SELECT id, name, stock, unit FROM phyto_products WHERE id IN ({})",
             vec!["?"; with_qty.len()].join(", ")
         );
-        let mut query = sqlx::query(&sql);
+        // SQL dynamique audité : uniquement des `?` (valeurs liées par bind).
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
         for p in &with_qty {
             query = bind_json(query, prop(p, "product_id")?);
         }

@@ -74,7 +74,8 @@ pub async fn record_days(
         "INSERT IGNORE INTO gps_days (day, device_id) VALUES {}",
         vec!["(?, ?)"; days.len()].join(", ")
     );
-    let mut query = sqlx::query(&sql);
+    // SQL dynamique audité : uniquement des `?` (valeurs liées par bind).
+    let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
     for (day, device_id) in days {
         query = query.bind(day).bind(device_id);
     }
@@ -312,7 +313,8 @@ async fn compact_device_day(
             "DELETE FROM gps_track WHERE id IN ({})",
             vec!["?"; chunk.len()].join(", ")
         );
-        let mut query = sqlx::query(&sql);
+        // SQL dynamique audité : uniquement des `?` (valeurs liées par bind).
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
         for id in chunk {
             query = query.bind(id);
         }

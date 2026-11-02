@@ -11,7 +11,7 @@ RUN npm ci --no-audit --no-fund
 COPY client/ ./
 RUN npm run build
 
-FROM rust:1.94-slim-bookworm AS build
+FROM rust:1.99-slim-bookworm AS build
 
 WORKDIR /usr/src/app
 
