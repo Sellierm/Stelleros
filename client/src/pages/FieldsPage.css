@@ -354,6 +354,35 @@ html.dark-theme .fields-layout-toggle:focus-visible {
   font-size: 11px !important;
 }
 
+.coverage-fields {
+  width: 100%;
+  margin: 6px 0 2px;
+  border-collapse: collapse;
+  color: var(--fields-ink);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.coverage-fields th {
+  padding: 0 0 4px;
+  color: var(--fields-muted);
+  font-weight: 600;
+  text-align: right;
+}
+
+.coverage-fields td {
+  padding: 4px 0;
+  border-top: 1px solid rgba(30, 143, 114, 0.14);
+  text-align: right;
+}
+
+.coverage-fields th:first-child,
+.coverage-fields td:first-child {
+  padding-right: 8px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
 .fields-page .pp-btn,
 .device-btn {
   border: 0;

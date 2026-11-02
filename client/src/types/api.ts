@@ -36,8 +36,9 @@ export interface PositionsHistoryResponse {
   positions?: Record<
     string,
     {
-      // [latitude, longitude, timestamp]
-      track?: [number, number, number][];
+      // [latitude, longitude, timestamp, précision (m), source] ; les deux
+      // derniers sont absents des réponses d'un serveur antérieur.
+      track?: [number, number, number, (number | null)?, (string | null)?][];
       last: GpsPoint;
     }
   >;

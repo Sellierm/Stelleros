@@ -53,6 +53,11 @@ function stadium(length: number, width: number) {
   return length * width + Math.PI * (width / 2) ** 2;
 }
 
+/** Mêmes points avec une précision (m) et une source. */
+function withAccuracy(points: LatLngPoint[], accuracy: number | null, source = "GPS Interne") {
+  return points.map((point) => ({ ...point, accuracy, source }));
+}
+
 /** Écart relatif inférieur à 2 % (discrétisation de la grille de 1 m). */
 function expectArea(actual: number, expected: number) {
   expect(Math.abs(actual - expected) / expected).toBeLessThan(0.02);
@@ -71,6 +76,9 @@ describe("computeCoverageArea", () => {
     expect(result.fieldsProcessed).toBe(1);
     expect(result.devicesUsed).toEqual(["tracteur"]);
     expect(result.warnings).toEqual([]);
+    expect(result.fields).toEqual([
+      { name: "Contour 1", areaM2: expect.closeTo(40000, 3), coveredM2: result.totalAreaM2 },
+    ]);
   });
 
   it("ne compte qu'une fois un aller-retour sur la même ligne", () => {
@@ -171,6 +179,84 @@ describe("computeCoverageArea", () => {
 
     it("échoue si aucune largeur n'est valide", () => {
       expect(() => computeCoverageArea([FIELD], [track(PASS, "")])).toThrow(/Aucune trace valide/);
+    });
+  });
+
+  describe("détail par parcelle", () => {
+    it("répartit la surface entre les parcelles traversées", () => {
+      const fields = [
+        { outer: rect(0, 0, 100, 200), name: "A" },
+        { outer: rect(100, 0, 200, 200), name: "B" },
+      ];
+      const result = computeCoverageArea(fields, [track(PASS)]);
+      const [a, b] = result.fields;
+      expect(result.fields.map((field) => field.name)).toEqual(["A", "B"]);
+      expect(a.areaM2).toBeCloseTo(20000, 3);
+      expect(b.areaM2).toBeCloseTo(20000, 3);
+      expectArea(a.coveredM2, 49.5 * 3 + stadium(0, 3) / 2);
+      expectArea(b.coveredM2, 50.5 * 3 + stadium(0, 3) / 2);
+      expect(a.coveredM2 + b.coveredM2).toBe(result.totalAreaM2);
+    });
+
+    it("déduit les enclaves de la surface de la parcelle", () => {
+      const field = { outer: FIELD, holes: [rect(80, 80, 120, 120)], name: "P" };
+      const [detail] = computeCoverageArea([field], [track(PASS)]).fields;
+      expect(detail.areaM2).toBeCloseTo(40000 - 1600, 3);
+    });
+
+    it("regroupe les contours d'une même parcelle", () => {
+      const fields = [
+        { outer: rect(0, 0, 100, 200), name: "P" },
+        { outer: rect(100, 0, 200, 200), name: "P" },
+      ];
+      const result = computeCoverageArea(fields, [track(PASS)]);
+      expect(result.fieldsProcessed).toBe(2);
+      expect(result.fields).toHaveLength(1);
+      expect(result.fields[0].areaM2).toBeCloseTo(40000, 3);
+      expect(result.fields[0].coveredM2).toBe(result.totalAreaM2);
+    });
+
+    it("nomme les contours sans nom d'après leur rang dans le plan", () => {
+      const result = computeCoverageArea([[at(0, 0), at(1, 1)], FIELD], [track(PASS)]);
+      expect(result.fields.map((field) => field.name)).toEqual(["Contour 2"]);
+    });
+  });
+
+  describe("précision des positions", () => {
+    it("ignore les positions du réseau mobile", () => {
+      const result = computeCoverageArea([FIELD], [track(withAccuracy(PASS, 3, "Réseau"))]);
+      expect(result.totalAreaM2).toBe(0);
+      expect(result.warnings).toEqual([
+        "tracteur : positions imprécises ignorées (51, réseau ou précision > 20 m)",
+      ]);
+    });
+
+    it("ignore une position imprécise écartée de la trace", () => {
+      // Au milieu du passage, une position à 10 m de la ligne : sans sa
+      // précision, elle ajoute deux bandes obliques à la surface.
+      const jump = (accuracy: number | null) =>
+        PASS.map((point, i) => (i === 25 ? { ...at(100.5, 110.5, 25), accuracy } : point));
+      expect(area([FIELD], [track(jump(null))])).toBeGreaterThan(1.1 * stadium(100, 3));
+      const result = computeCoverageArea([FIELD], [track(jump(40))]);
+      expectArea(result.totalAreaM2, stadium(100, 3));
+      expect(result.warnings).toEqual([
+        "tracteur : positions imprécises ignorées (1, réseau ou précision > 20 m)",
+      ]);
+    });
+
+    it("prévient quand la précision est grossière pour la largeur d'outil", () => {
+      const result = computeCoverageArea([FIELD], [track(withAccuracy(PASS, 9.94))]);
+      expectArea(result.totalAreaM2, stadium(100, 3));
+      expect(result.warnings).toEqual([
+        "tracteur : précision GPS de 9.9 m (médiane) pour un outil de 3 m, surface indicative",
+      ]);
+    });
+
+    it("ne prévient pas avec une précision RTK ou inconnue", () => {
+      for (const accuracy of [0.02, null]) {
+        const result = computeCoverageArea([FIELD], [track(withAccuracy(PASS, accuracy, "RTK RTK Fix"))]);
+        expect(result.warnings).toEqual([]);
+      }
     });
   });
 

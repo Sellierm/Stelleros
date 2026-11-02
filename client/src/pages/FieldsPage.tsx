@@ -45,6 +45,8 @@ const todayParis = () => PARIS_DATE_FORMAT.format(new Date());
 
 // Fréquence de rafraîchissement du panneau latéral en temps réel
 const GPS_PANEL_REFRESH_MS = 1000;
+// Détail par parcelle : en dessous (0,01 ha), simple passage en bordure.
+const MIN_LISTED_COVERAGE_M2 = 100;
 
 const normalizeCultureName = (str: string) => {
   if (!str) return "N/A";
@@ -381,7 +383,13 @@ export default function FieldsPage() {
       data.positions || {},
     )) {
       const path = track
-        .map(([lat, lng, t]) => ({ lat, lng, t }))
+        .map(([lat, lng, t, accuracy, source]) => ({
+          lat,
+          lng,
+          t,
+          accuracy,
+          source,
+        }))
         .filter(
           (point) => Number.isFinite(point.lat) && Number.isFinite(point.lng),
         );
@@ -673,6 +681,10 @@ export default function FieldsPage() {
           for (let i = 0; i < placemarks.length; i++) {
             let surface = 0;
             let cultureStr = "";
+            const placemarkName =
+              Array.from(placemarks[i].children)
+                .find((child) => child.localName === "name")
+                ?.textContent?.trim() ?? "";
 
             const desc: Element | undefined =
               placemarks[i].getElementsByTagName("description")[0];
@@ -704,6 +716,11 @@ export default function FieldsPage() {
             }
 
             const cultureName = normalizeCultureName(cultureStr);
+            // Nom du détail par parcelle : « 12 · Blé ».
+            const fieldName =
+              placemarkName && cultureName !== "N/A"
+                ? `${placemarkName} · ${cultureName}`
+                : placemarkName;
             const polygonNodes = placemarks[i].getElementsByTagName("Polygon");
             for (let p = 0; p < polygonNodes.length; p++) {
               const outerBoundary =
@@ -724,7 +741,11 @@ export default function FieldsPage() {
                 )
                 .filter((hole) => hole.length >= 3);
               if (points.length >= 3) {
-                fieldPolygons.push({ outer: points, holes });
+                fieldPolygons.push({
+                  outer: points,
+                  holes,
+                  name: fieldName || undefined,
+                });
                 const overlay = new google.maps.Polygon({
                   paths: [points, ...holes],
                   map,
@@ -906,6 +927,10 @@ export default function FieldsPage() {
     } satisfies CoverageWorkerRequest);
   };
 
+  const coveredFields = (coverageResult?.fields ?? []).filter(
+    (field) => field.coveredM2 >= MIN_LISTED_COVERAGE_M2,
+  );
+
   return (
     <div className="fields-page">
       <Nav />
@@ -1080,17 +1105,42 @@ export default function FieldsPage() {
                   <p className="coverage-error">{coverageError}</p>
                 </div>
               )}
-              {coverageResult && coverageResult.warnings.length > 0 && (
-                <div className="lin">
-                  <p className="coverage-warning">
-                    {coverageResult.warnings.join(" · ")}
-                  </p>
+              {coverageResult?.warnings.map((warning) => (
+                <div className="lin" key={warning}>
+                  <p className="coverage-warning">{warning}</p>
                 </div>
-              )}
+              ))}
               {coverageResult && (
                 <div className="lin">
                   <p>{coverageResult.totalAreaHa.toFixed(2)} Ha couverts</p>
                 </div>
+              )}
+              {coveredFields.length > 0 && (
+                <table className="coverage-fields">
+                  <thead>
+                    <tr>
+                      <th scope="col">Parcelle</th>
+                      <th scope="col">Ha</th>
+                      <th scope="col">% parcelle</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {coveredFields.map(({ name, areaM2, coveredM2 }) => (
+                      <tr key={name}>
+                        <td>{name}</td>
+                        <td>{(coveredM2 / 10000).toFixed(2)}</td>
+                        <td>
+                          {areaM2 > 0
+                            ? Math.min(
+                                100,
+                                Math.round((100 * coveredM2) / areaM2),
+                              )
+                            : "–"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
             </div>
             <div id="gpsDevices">
