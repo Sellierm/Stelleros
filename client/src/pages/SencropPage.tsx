@@ -2,7 +2,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type MutableRefObject,
   type RefObject,
 } from "react";
 import type { Chart, ChartConfiguration } from "chart.js";
@@ -140,8 +139,8 @@ export default function SencropPage() {
     if (!socket) return;
 
     const drawChart = (
-      canvasRef: RefObject<HTMLCanvasElement>,
-      instRef: MutableRefObject<ChartHandle | null>,
+      canvasRef: RefObject<HTMLCanvasElement | null>,
+      instRef: RefObject<ChartHandle | null>,
       config: SencropChartConfig,
     ) => {
       import("chart.js/auto").then(({ default: Chart }) => {
