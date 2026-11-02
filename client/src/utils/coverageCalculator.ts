@@ -2,11 +2,17 @@ export interface LatLngPoint {
   lat: number;
   lng: number;
   t?: number;
+  // Précision (m) et source de la position, quand elles sont connues.
+  accuracy?: number | null;
+  source?: string | null;
 }
 
 export interface FieldRings {
   outer: LatLngPoint[];
   holes?: LatLngPoint[][];
+  // Nom de la parcelle dans le détail du résultat (contours de même nom
+  // regroupés).
+  name?: string;
 }
 
 // Contour simple [{lat, lng}, ...] ou { outer, holes }.
@@ -19,12 +25,22 @@ export interface CoverageTrack {
   widthM: number | string;
 }
 
+export interface FieldCoverage {
+  name: string;
+  // Surface du contour, enclaves déduites.
+  areaM2: number;
+  coveredM2: number;
+}
+
 export interface CoverageResult {
   totalAreaM2: number;
   totalAreaHa: number;
   fieldsProcessed: number;
   devicesUsed: string[];
   warnings: string[];
+  // Détail par parcelle, dans l'ordre du plan. Une zone commune à deux
+  // contours n'est comptée que dans le premier.
+  fields: FieldCoverage[];
 }
 
 export interface CoverageWorkerRequest {
@@ -42,6 +58,8 @@ interface PointM {
 }
 
 interface FieldM {
+  name: string;
+  areaM2: number;
   outer: PointM[];
   holes: PointM[][];
   minX: number;
@@ -67,6 +85,10 @@ const MAX_SEGMENT_GAP_MS = 30_000;
 const MIN_WORKING_SPEED_MS = 0.2;
 // Segments plus rapides ignorés (saut GPS aberrant).
 const MAX_WORKING_SPEED_MS = 15;
+// Positions trop imprécises pour situer l'outil (réseau mobile ou Wi-Fi, GPS
+// interne dégradé) : ignorées.
+const MAX_POINT_ACCURACY_M = 20;
+const UNUSABLE_SOURCES = new Set(["Réseau"]);
 
 function projectToMeters(
   lat: number,
@@ -78,6 +100,14 @@ function projectToMeters(
     EARTH_RADIUS_M * (lon - refLon) * DEG2RAD * Math.cos(refLat * DEG2RAD);
   const y = EARTH_RADIUS_M * (lat - refLat) * DEG2RAD;
   return { x, y };
+}
+
+function ringArea(ring: PointM[]) {
+  let twiceArea = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    twiceArea += ring[j].x * ring[i].y - ring[i].x * ring[j].y;
+  }
+  return Math.abs(twiceArea) / 2;
 }
 
 function pointInRing(point: PointM, ring: PointM[]) {
@@ -130,6 +160,21 @@ function squaredDistanceToSegment(
 }
 
 const isTimestamp = (t: number | undefined): t is number => Number.isFinite(t);
+
+// Précision inconnue : la position est gardée.
+function isUsablePoint({ accuracy, source }: LatLngPoint) {
+  if (source != null && UNUSABLE_SOURCES.has(source)) return false;
+  return !(typeof accuracy === "number" && accuracy > MAX_POINT_ACCURACY_M);
+}
+
+function median(values: number[]) {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = sorted.length >> 1;
+  return sorted.length % 2
+    ? sorted[middle]
+    : (sorted[middle - 1] + sorted[middle]) / 2;
+}
 
 function isWorkingSegment(start: PointM, end: PointM) {
   const length = Math.hypot(end.x - start.x, end.y - start.y);
@@ -225,11 +270,15 @@ function computeFieldCoverage(
 }
 
 function toFieldRings(fieldPolygon: FieldPolygon) {
-  // Accepte un contour simple [{lat, lng}, ...] ou { outer, holes }.
-  if (Array.isArray(fieldPolygon)) return { outer: fieldPolygon, holes: [] };
+  // Accepte un contour simple [{lat, lng}, ...] ou { outer, holes, name }.
+  if (Array.isArray(fieldPolygon)) {
+    return { outer: fieldPolygon, holes: [], name: undefined };
+  }
   return {
     outer: fieldPolygon?.outer,
     holes: Array.isArray(fieldPolygon?.holes) ? fieldPolygon.holes : [],
+    name:
+      typeof fieldPolygon?.name === "string" ? fieldPolygon.name : undefined,
   };
 }
 
@@ -249,7 +298,7 @@ export function computeCoverageArea(
   }
 
   const rawFields = fieldPolygonsLatLng
-    .map(toFieldRings)
+    .map((fieldPolygon, index) => ({ ...toFieldRings(fieldPolygon), index }))
     .filter(({ outer }) => Array.isArray(outer) && outer.length >= 3);
   if (rawFields.length === 0) {
     throw new Error("Aucun contour de champ disponible");
@@ -263,8 +312,11 @@ export function computeCoverageArea(
     t: point.t,
   });
 
-  const fields = rawFields.map(({ outer, holes }): FieldM => {
+  const fields = rawFields.map(({ outer, holes, name, index }): FieldM => {
     const outerM = outer.map(project);
+    const holesM = holes
+      .filter((hole) => Array.isArray(hole) && hole.length >= 3)
+      .map((hole) => hole.map(project));
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
@@ -275,11 +327,12 @@ export function computeCoverageArea(
       maxX = Math.max(maxX, point.x);
       maxY = Math.max(maxY, point.y);
     }
+    const holesArea = holesM.reduce((sum, hole) => sum + ringArea(hole), 0);
     return {
+      name: name?.trim() || `Contour ${index + 1}`,
+      areaM2: Math.max(0, ringArea(outerM) - holesArea),
       outer: outerM,
-      holes: holes
-        .filter((hole) => Array.isArray(hole) && hole.length >= 3)
-        .map((hole) => hole.map(project)),
+      holes: holesM,
       minX,
       minY,
       maxX,
@@ -295,9 +348,29 @@ export function computeCoverageArea(
       warnings.push(`Largeur ignorée pour ${track.deviceId} : valeur invalide`);
       continue;
     }
-    if (!Array.isArray(track.points) || track.points.length < 2) continue;
 
-    const pointsM = track.points.map(project);
+    const points = Array.isArray(track.points) ? track.points : [];
+    const usable = points.filter(isUsablePoint);
+    const ignored = points.length - usable.length;
+    if (ignored > 0) {
+      warnings.push(
+        `${track.deviceId} : positions imprécises ignorées (${ignored}, réseau ou précision > ${MAX_POINT_ACCURACY_M} m)`,
+      );
+    }
+    const accuracy = median(
+      usable.flatMap(({ accuracy }) =>
+        typeof accuracy === "number" && Number.isFinite(accuracy)
+          ? [accuracy]
+          : [],
+      ),
+    );
+    if (accuracy !== null && accuracy > width / 2) {
+      warnings.push(
+        `${track.deviceId} : précision GPS de ${accuracy.toFixed(1)} m (médiane) pour un outil de ${width} m, surface indicative`,
+      );
+    }
+
+    const pointsM = usable.map(project);
     const segments: TrackM["segments"] = [];
     for (let i = 0; i < pointsM.length - 1; i++) {
       if (isWorkingSegment(pointsM[i], pointsM[i + 1])) {
@@ -311,13 +384,23 @@ export function computeCoverageArea(
   }
 
   let totalAreaM2 = 0;
+  const byName = new Map<string, FieldCoverage>();
   for (let i = 0; i < fields.length; i++) {
-    totalAreaM2 += computeFieldCoverage(
+    const { name, areaM2 } = fields[i];
+    const coveredM2 = computeFieldCoverage(
       fields[i],
       fields.slice(0, i),
       validTracks,
       cellSizeM,
     );
+    totalAreaM2 += coveredM2;
+    const entry = byName.get(name);
+    if (entry) {
+      entry.areaM2 += areaM2;
+      entry.coveredM2 += coveredM2;
+    } else {
+      byName.set(name, { name, areaM2, coveredM2 });
+    }
   }
 
   return {
@@ -326,5 +409,6 @@ export function computeCoverageArea(
     fieldsProcessed: fields.length,
     devicesUsed: validTracks.map((track) => track.deviceId),
     warnings,
+    fields: [...byName.values()],
   };
 }
