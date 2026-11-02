@@ -43,8 +43,26 @@ const VALID_MEASURES: [&str; 9] = [
 /// Identité attachée au socket après le middleware de connexion.
 #[derive(Clone)]
 enum Peer {
-    Gps { device_id: String },
-    Web { username: String },
+    Gps {
+        device_id: String,
+        app_version: Option<String>,
+    },
+    Web {
+        username: String,
+    },
+}
+
+/// Version de l'app annoncée au handshake (`appVersion`, gps-sender ≥ 2.1.2),
+/// acceptée seulement si elle est courte et sans caractère douteux : elle
+/// finit telle quelle dans les journaux.
+fn app_version(value: Option<&Value>) -> Option<String> {
+    let version = value?.as_str()?.trim();
+    let valid = !version.is_empty()
+        && version.len() <= 32
+        && version
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+' | '_'));
+    valid.then(|| version.to_string())
 }
 
 #[derive(Debug)]
@@ -102,7 +120,10 @@ async fn authenticate(
             );
             return Err(ConnectError("Unauthorized device"));
         }
-        s.extensions.insert(Peer::Gps { device_id });
+        s.extensions.insert(Peer::Gps {
+            device_id,
+            app_version: app_version(auth.get("appVersion")),
+        });
         return Ok(());
     }
 
@@ -122,7 +143,10 @@ async fn authenticate(
 async fn on_connect(s: SocketRef) {
     let ip = socket_ip(&s);
     match s.extensions.get::<Peer>() {
-        Some(Peer::Gps { device_id }) => setup_gps_socket(s, ip, device_id),
+        Some(Peer::Gps {
+            device_id,
+            app_version,
+        }) => setup_gps_socket(s, ip, device_id, app_version),
         Some(Peer::Web { username }) => setup_web_socket(s, ip, username),
         None => {
             let _ = s.disconnect();
@@ -132,11 +156,18 @@ async fn on_connect(s: SocketRef) {
 
 // ── Device GPS : uniquement l'événement "location" ────────────────────────
 
-fn setup_gps_socket(s: SocketRef, ip: String, device_id: String) {
+fn setup_gps_socket(s: SocketRef, ip: String, device_id: String, app_version: Option<String>) {
+    let version = app_version.map_or_else(
+        || "version inconnue".to_string(),
+        |v| format!("version {v}"),
+    );
     auth_log(
         &ip,
         "INFO",
-        &format!("Device GPS connecté : {device_id} (id: {})", s.id),
+        &format!(
+            "Device GPS connecté : {device_id} ({version}, id: {})",
+            s.id
+        ),
     );
 
     let (event_ip, event_device) = (ip.clone(), device_id.clone());
@@ -629,6 +660,24 @@ pub fn register(io: &socketioxide::SocketIo) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn app_version_valide() {
+        assert_eq!(app_version(Some(&json!("2.1.2"))), Some("2.1.2".into()));
+        assert_eq!(
+            app_version(Some(&json!(" 2.2.0-beta+3 "))),
+            Some("2.2.0-beta+3".into())
+        );
+    }
+
+    #[test]
+    fn app_version_absente_ou_douteuse() {
+        assert_eq!(app_version(None), None);
+        assert_eq!(app_version(Some(&json!(212))), None);
+        assert_eq!(app_version(Some(&json!(""))), None);
+        assert_eq!(app_version(Some(&json!("2.1\n[OK] faux log"))), None);
+        assert_eq!(app_version(Some(&json!("x".repeat(33)))), None);
+    }
 
     #[test]
     fn dates() {
