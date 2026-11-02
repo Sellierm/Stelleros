@@ -102,14 +102,37 @@ const simplifyDisplayPath = (path: LatLngPoint[]) => {
   return simplified;
 };
 
-const getFieldOverlayStyle = (culture: string, selectedCrop: string | null) => {
-  const isSelected = selectedCrop && culture === selectedCrop;
-  return {
-    fillOpacity: selectedCrop ? (isSelected ? 0.75 : 0.3) : 0.5,
-    strokeOpacity: 1,
-    strokeWeight: isSelected ? 3 : 1,
-    zIndex: isSelected ? 2 : 1,
-  };
+// Style des parcelles selon la sélection (clic sur une parcelle ou sur une
+// culture de la légende) : quatre niveaux d'opacité.
+const FIELD_STYLES = {
+  // Rien de sélectionné.
+  none: { fillOpacity: 0.5, strokeWeight: 1, zIndex: 1 },
+  // Non sélectionnée, autre culture.
+  other: { fillOpacity: 0.2, strokeWeight: 1, zIndex: 1 },
+  // Non sélectionnée, même culture que la parcelle sélectionnée.
+  sameCrop: { fillOpacity: 0.6, strokeWeight: 2, zIndex: 2 },
+  // Parcelle cliquée, ou parcelles de la culture choisie dans la légende.
+  selected: { fillOpacity: 0.85, strokeWeight: 3, zIndex: 3 },
+};
+
+interface FieldSelection {
+  crop: string | null;
+  // Indice du Placemark dans le plan KML (tous ses polygones ensemble).
+  fieldId: number | null;
+}
+
+const getFieldOverlayStyle = (
+  fieldId: number,
+  culture: string,
+  selection: FieldSelection,
+) => {
+  const { crop, fieldId: selectedId } = selection;
+  let level: keyof typeof FIELD_STYLES = "other";
+  if (crop === null && selectedId === null) level = "none";
+  else if (selectedId !== null ? fieldId === selectedId : culture === crop) {
+    level = "selected";
+  } else if (crop !== null && culture === crop) level = "sameCrop";
+  return { strokeOpacity: 1, ...FIELD_STYLES[level] };
 };
 
 export default function FieldsPage() {
@@ -135,6 +158,7 @@ export default function FieldsPage() {
   const [totalHa, setTotalHa] = useState<string | null>(null);
   const [cropTotals, setCropTotals] = useState<Record<string, number>>({});
   const [selectedCrop, setSelectedCrop] = useState<string | null>(null);
+  const [selectedFieldId, setSelectedFieldId] = useState<number | null>(null);
   const [gpsPositions, setGpsPositions] = useState<Record<string, GpsPoint>>(
     {},
   );
@@ -169,21 +193,25 @@ export default function FieldsPage() {
   );
   const fieldPolygonsRef = useRef<FieldRings[]>([]);
   const fieldOverlaysRef = useRef<
-    { overlay: google.maps.Polygon; culture: string }[]
+    { overlay: google.maps.Polygon; culture: string; fieldId: number }[]
   >([]);
   const trackPointsByDeviceRef = useRef<Record<string, LatLngPoint[]>>({});
   const historyRequestIdRef = useRef(0);
   const coverageWorkerRef = useRef<Worker | null>(null);
   const historyCacheRef = useRef(new Map<string, HistoryByDevice>());
 
-  const selectedCropRef = useRef(selectedCrop);
+  const selectionRef = useRef<FieldSelection>({
+    crop: selectedCrop,
+    fieldId: selectedFieldId,
+  });
 
   useEffect(() => {
-    selectedCropRef.current = selectedCrop;
-    fieldOverlaysRef.current.forEach(({ overlay, culture }) => {
-      overlay.setOptions(getFieldOverlayStyle(culture, selectedCrop));
+    const selection = { crop: selectedCrop, fieldId: selectedFieldId };
+    selectionRef.current = selection;
+    fieldOverlaysRef.current.forEach(({ overlay, culture, fieldId }) => {
+      overlay.setOptions(getFieldOverlayStyle(fieldId, culture, selection));
     });
-  }, [selectedCrop]);
+  }, [selectedCrop, selectedFieldId]);
 
   usePageMeta("Fields", "/assets/icons8-champ-32.png");
 
@@ -677,6 +705,9 @@ export default function FieldsPage() {
             overlay.setMap(null),
           );
           fieldOverlaysRef.current = [];
+          // Les indices de parcelle changent avec le plan.
+          selectionRef.current = { ...selectionRef.current, fieldId: null };
+          setSelectedFieldId(null);
 
           for (let i = 0; i < placemarks.length; i++) {
             let surface = 0;
@@ -752,9 +783,16 @@ export default function FieldsPage() {
                   strokeColor: CROP_COLORS[cultureName] || "#ffffff",
                   fillColor: CROP_COLORS[cultureName] || "#ffffff",
                   clickable: true,
-                  ...getFieldOverlayStyle(cultureName, selectedCropRef.current),
+                  ...getFieldOverlayStyle(i, cultureName, selectionRef.current),
                 });
                 overlay.addListener("click", () => {
+                  // Second clic sur la parcelle sélectionnée : désélection.
+                  if (selectionRef.current.fieldId === i) {
+                    setSelectedFieldId(null);
+                    setSelectedCrop(null);
+                    setMapInfo(["", ""]);
+                    return;
+                  }
                   const content = desc?.textContent || "";
                   const lines = content
                     .replace(/<[^>]+>/g, "\n")
@@ -769,11 +807,13 @@ export default function FieldsPage() {
                       return `${line.slice(0, index)} ${line.slice(index)}`;
                     });
                   setMapInfo([infos[0] || "", infos[1] || ""]);
-                  if (cultureName !== "N/A") setSelectedCrop(cultureName);
+                  setSelectedFieldId(i);
+                  setSelectedCrop(cultureName !== "N/A" ? cultureName : null);
                 });
                 fieldOverlaysRef.current.push({
                   overlay,
                   culture: cultureName,
+                  fieldId: i,
                 });
               }
             }
@@ -954,9 +994,10 @@ export default function FieldsPage() {
                 onMouseLeave={
                   name === "Pdt" ? () => setShowPdtInfo(false) : undefined
                 }
-                onClick={() =>
-                  setSelectedCrop((prev) => (prev === name ? null : name))
-                }
+                onClick={() => {
+                  setSelectedFieldId(null);
+                  setSelectedCrop((prev) => (prev === name ? null : name));
+                }}
                 style={{
                   cursor: "pointer",
                   fontWeight: selectedCrop === name ? "bold" : "normal",
