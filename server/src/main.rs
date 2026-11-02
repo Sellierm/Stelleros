@@ -147,7 +147,7 @@ async fn main() {
     state.set_io(io);
     track::spawn_maintenance(state.clone());
 
-    let app = build_router(state, socket_layer);
+    let app = build_router(state.clone(), socket_layer);
 
     let listener = match tokio::net::TcpListener::bind(&addr).await {
         Ok(listener) => listener,
@@ -165,8 +165,51 @@ async fn main() {
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown(shutdown_signal(state.clone()))
     .await
     {
         eprintln!("Server failed to start: {err}");
+    }
+    // Ferme proprement les connexions MariaDB (pas d'« Aborted connection »).
+    state.pool.close().await;
+    println!("Serveur arrêté.");
+}
+
+/// Attend `docker stop` (SIGTERM) ou Ctrl-C, puis ferme les connexions
+/// Socket.IO ; axum termine ensuite les requêtes HTTP en cours. Le serveur est
+/// le PID 1 du conteneur : sans gestionnaire, le noyau ignore SIGTERM et Docker
+/// le tuait (SIGKILL) au bout de 10 s.
+async fn shutdown_signal(state: AppState) {
+    let ctrl_c = async {
+        if tokio::signal::ctrl_c().await.is_err() {
+            std::future::pending::<()>().await;
+        }
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut sigterm) => {
+                sigterm.recv().await;
+            }
+            Err(_) => std::future::pending::<()>().await,
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {}
+        _ = terminate => {}
+    }
+    println!("Arrêt demandé : fermeture des connexions…");
+    // Ferme les transports engine.io sans paquet socket.io « disconnect » :
+    // navigateurs et tablettes y voient une coupure et se reconnectent seuls
+    // (les points GPS non acquittés restent dans la file de la tablette).
+    let close = state.io().close();
+    if tokio::time::timeout(std::time::Duration::from_secs(5), close)
+        .await
+        .is_err()
+    {
+        eprintln!("Fermeture Socket.IO trop longue : abandonnée.");
     }
 }
