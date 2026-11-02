@@ -229,7 +229,8 @@ pub async fn store_points(
         POINT_COLUMNS.join(", "),
         vec![row.as_str(); points.len()].join(", ")
     );
-    let mut track = sqlx::query(&track_sql);
+    // SQL dynamique audité : colonnes constantes et `?` (valeurs liées).
+    let mut track = sqlx::query(sqlx::AssertSqlSafe(track_sql));
     for point in points {
         for column in POINT_COLUMNS {
             track = bind_json(track, point.get(column));

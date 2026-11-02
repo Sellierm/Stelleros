@@ -24,10 +24,10 @@ use axum::response::{IntoResponse, Response};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use chrono::{NaiveDateTime, Utc};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
-use rand::Rng;
-use rand::distributions::Alphanumeric;
+use rand::RngExt;
+use rand::distr::Alphanumeric;
 use serde_json::{Value, json};
 use sha2::Sha256;
 use sqlx::Row;
@@ -292,7 +292,7 @@ fn delete_session_cookies(state: &AppState, cookies: &HashMap<String, String>) -
 // ── Utilitaires ───────────────────────────────────────────────────────────
 
 fn generate_id() -> String {
-    rand::thread_rng()
+    rand::rng()
         .sample_iter(&Alphanumeric)
         .take(32)
         .map(char::from)
