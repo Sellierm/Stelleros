@@ -18,6 +18,11 @@ keep=10
 
 compose() { (cd "$project_dir" && docker compose "$@"); }
 
+# Un seul déploiement à la fois par projet ; arret-preprod.sh n'arrête pas
+# la préprod pendant ce temps.
+exec 9>"$project_dir/.deploiement.lock"
+flock 9
+
 # Compose ne recrée pas site-app quand seule la cible de l'étiquette change :
 # on compare l'image du conteneur à celle voulue.
 start() {
