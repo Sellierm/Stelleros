@@ -283,6 +283,12 @@ Deployments go through `deploy/deploie.sh`, never `docker compose up --build`:
 The pre-production banner comes from `ENV_LABEL` in its `server/.env`
 (`GET /api/env`), not from the build.
 
+Pre-production is stopped (containers kept, database preserved) one hour after
+its last deployment by `deploy/arret-preprod.sh`, run every minute from the
+`server` user's crontab. Redeploying (re-running the PR's CI job, or
+`deploy/deploie.sh` in `~/stacks/site-preprod/app`) starts it again for an
+hour; `deploy/copie-base-prod.sh` counts as a deployment.
+
 ## GPS sender
 
 GPS positions can be sent by the

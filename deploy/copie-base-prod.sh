@@ -2,9 +2,12 @@
 # Remplace la base de la préprod par une copie de la base de prod.
 #
 # La prod n'est que lue (mariadb-dump --single-transaction, sans verrou).
-# L'application de préprod est arrêtée pendant l'import puis redémarrée :
-# ses migrations sqlx s'appliquent alors sur la copie, ce qui les teste
-# sur de vraies données avant qu'elles n'atteignent la prod.
+# L'application de préprod est arrêtée pendant l'import puis redéployée par
+# deploie.sh (image déjà construite, réutilisée) : ses migrations sqlx
+# s'appliquent alors sur la copie, ce qui les teste sur de vraies données
+# avant qu'elles n'atteignent la prod. La copie compte comme un déploiement :
+# la préprod repart pour une heure (arret-preprod.sh), même si elle était
+# arrêtée.
 #
 # Usage : deploy/copie-base-prod.sh
 # Dossiers (projets Compose) : PROD_DIR (~/stacks/site), PREPROD_DIR (~/stacks/site-preprod).
@@ -20,6 +23,13 @@ fi
 
 prod() { (cd "$prod_dir" && docker compose "$@"); }
 preprod() { (cd "$preprod_dir" && docker compose "$@"); }
+
+# Pendant la copie, arret-preprod.sh ne doit pas arrêter la base de préprod.
+exec 9>"$preprod_dir/.deploiement.lock"
+flock 9
+
+# La préprod a pu être arrêtée par arret-preprod.sh.
+preprod up -d --wait site-db
 
 # Garde-fou : la cible ne doit pas être le conteneur de base de la prod.
 if [ "$(prod ps -q site-db)" = "$(preprod ps -q site-db)" ]; then
@@ -42,6 +52,8 @@ prod exec -T site-db sh -c '
   preprod exec -T site-db sh -c '
     MYSQL_PWD="$MARIADB_ROOT_PASSWORD" exec mariadb -uroot "$MARIADB_DATABASE"'
 
-echo "Redémarrage de l'application de préprod…"
-preprod start site-app
+# deploie.sh prend lui-même le verrou : on le libère avant.
+exec 9>&-
+echo "Redéploiement de la préprod…"
+"$preprod_dir/app/deploy/deploie.sh"
 echo "Terminé."

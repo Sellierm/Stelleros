@@ -38,6 +38,11 @@ if [ "${1:-}" = "--liste" ]; then
   exit 0
 fi
 
+# Un seul déploiement à la fois par projet ; arret-preprod.sh n'arrête pas
+# la préprod pendant ce temps.
+exec 9>"$project_dir/.deploiement.lock"
+flock 9
+
 current=$(docker image inspect --format '{{.Id}}' "$target")
 
 if [ -n "${1:-}" ]; then
