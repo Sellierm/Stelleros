@@ -7,7 +7,8 @@
 //!  - à l'arrêt, les positions qui restent dans la précision du point
 //!    d'ancrage (on garde l'arrivée et le départ) ;
 //!  - sur une ligne droite, tous les points intermédiaires situés à moins de
-//!    leur propre précision du segment (Douglas-Peucker).
+//!    leur propre précision du segment (Douglas-Peucker), en gardant tout de
+//!    même un point toutes les 20 s (calcul de couverture du client).
 
 use std::collections::HashSet;
 use std::time::Duration;
@@ -29,6 +30,11 @@ const DEFAULT_TOLERANCE_M: f64 = 0.5;
 /// Un écart plus long entre deux points conservés (arrêt, coupure) borne les
 /// segments simplifiés : on ne relie pas deux passages distincts.
 const SEGMENT_GAP_MS: i64 = 30_000;
+/// Écart maximal entre deux points conservés d'un même déplacement. Le calcul
+/// de couverture du client (`coverageCalculator.ts`) prend tout segment de plus
+/// de 30 s pour une coupure et l'ignore : une longue ligne droite réduite à ses
+/// deux extrémités disparaîtrait de la surface travaillée.
+const MAX_KEPT_GAP_MS: i64 = 20_000;
 /// Jours précédents rattrapés à chaque passage (serveur arrêté à 5 h…).
 const CATCH_UP_DAYS: u64 = 7;
 const COMPACTION_HOUR: u32 = 5;
@@ -185,8 +191,11 @@ fn distance_to_segment(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
 /// Indices (croissants) des points à conserver. Les points doivent être
 /// triés par timestamp. Premier et dernier point toujours conservés.
 ///
-/// Garantie : chaque point retiré est à moins de sa propre précision
-/// (bornée à [`MIN_TOLERANCE_M`], [`MAX_TOLERANCE_M`]) de la trace conservée.
+/// Garanties :
+///  - chaque point retiré est à moins de sa propre précision (bornée à
+///    [`MIN_TOLERANCE_M`], [`MAX_TOLERANCE_M`]) de la trace conservée ;
+///  - deux points conservés consécutifs sont à au plus [`MAX_KEPT_GAP_MS`]
+///    d'écart, sauf à l'arrêt ou sur un trou dans les données.
 pub fn simplify(points: &[TrackPoint]) -> Vec<usize> {
     let n = points.len();
     if n <= 2 {
@@ -231,7 +240,8 @@ pub fn simplify(points: &[TrackPoint]) -> Vec<usize> {
 
 /// Douglas-Peucker sur `points[first..=last]`, à tolérance par point : marque
 /// dans `keep` les points nécessaires pour que chaque point retiré reste à
-/// moins de sa propre précision de la trace simplifiée.
+/// moins de sa propre précision de la trace simplifiée, et qu'aucun intervalle
+/// conservé ne dépasse [`MAX_KEPT_GAP_MS`].
 fn douglas_peucker(
     first: usize,
     last: usize,
@@ -257,12 +267,27 @@ fn douglas_peucker(
                 worst = Some(k);
             }
         }
-        if let Some(k) = worst {
+        if let Some(k) = worst.or_else(|| time_split(lo, hi, points)) {
             keep[k] = true;
             stack.push((lo, k));
             stack.push((k, hi));
         }
     }
+}
+
+/// Point où couper `points[lo..=hi]` quand l'intervalle dépasse
+/// [`MAX_KEPT_GAP_MS`] : le dernier situé à un multiple de cet écart après
+/// `lo`, vers le milieu (récursion équilibrée, points espacés au maximum), ou
+/// le suivant de `lo` si les données ont elles-mêmes un trou.
+fn time_split(lo: usize, hi: usize, points: &[TrackPoint]) -> Option<usize> {
+    let span = points[hi].timestamp - points[lo].timestamp;
+    if hi <= lo + 1 || span <= MAX_KEPT_GAP_MS {
+        return None;
+    }
+    let steps = (span + MAX_KEPT_GAP_MS - 1) / MAX_KEPT_GAP_MS;
+    let limit = points[lo].timestamp + steps / 2 * MAX_KEPT_GAP_MS;
+    let before = points[lo + 1..hi].partition_point(|p| p.timestamp <= limit);
+    Some(lo + before.max(1))
 }
 
 // ── Compaction quotidienne ────────────────────────────────────────────────
@@ -477,11 +502,19 @@ mod tests {
     }
 
     #[test]
-    fn straight_line_keeps_ends_only() {
+    fn short_straight_line_keeps_ends_only() {
+        let points: Vec<_> = (0..=20)
+            .map(|i| at(i as f64, 0.001 * (i % 2) as f64, i, 0.02))
+            .collect();
+        assert_eq!(simplify(&points), vec![0, 20]);
+    }
+
+    #[test]
+    fn long_straight_line_keeps_a_point_every_20_s() {
         let points: Vec<_> = (0..100)
             .map(|i| at(i as f64, 0.001 * (i % 2) as f64, i, 0.02))
             .collect();
-        assert_eq!(simplify(&points), vec![0, 99]);
+        assert_eq!(simplify(&points), vec![0, 20, 40, 60, 80, 99]);
     }
 
     #[test]
@@ -489,7 +522,16 @@ mod tests {
         // Aller vers l'est puis demi-tour vers le nord : l'angle reste.
         let mut points: Vec<_> = (0..=50).map(|i| at(i as f64, 0.0, i, 0.02)).collect();
         points.extend((1..=50).map(|i| at(50.0, i as f64, 50 + i, 0.02)));
-        assert_eq!(simplify(&points), vec![0, 50, 100]);
+        assert_eq!(simplify(&points), vec![0, 20, 40, 50, 70, 90, 100]);
+    }
+
+    #[test]
+    fn gap_in_data_is_not_filled() {
+        // Trou de 25 s (moins que SEGMENT_GAP_MS : même segment) en ligne
+        // droite : rien à y ajouter, les deux bords du trou sont gardés.
+        let mut points: Vec<_> = (0..=10).map(|i| at(i as f64, 0.0, i, 0.02)).collect();
+        points.extend((0..=10).map(|i| at(60.0 + i as f64, 0.0, 35 + i, 0.02)));
+        assert_eq!(simplify(&points), vec![0, 10, 11, 21]);
     }
 
     #[test]
@@ -512,6 +554,7 @@ mod tests {
         // Arrivée et départ de l'arrêt conservés : sa durée reste visible.
         assert!(kept.contains(&10) && kept.contains(&610), "{kept:?}");
         assert_within_accuracy(&points, &kept);
+        assert_max_gap_while_moving(&points, &kept);
     }
 
     #[test]
@@ -542,6 +585,7 @@ mod tests {
         let kept = simplify(&points);
         assert!(kept.len() < points.len() / 4, "{}", kept.len());
         assert_within_accuracy(&points, &kept);
+        assert_max_gap_while_moving(&points, &kept);
     }
 
     #[test]
@@ -564,6 +608,23 @@ mod tests {
         let kept = simplify(&points);
         assert!(kept.len() < points.len() / 10, "{}", kept.len());
         assert_within_accuracy(&points, &kept);
+        assert_max_gap_while_moving(&points, &kept);
+    }
+
+    /// Deux points conservés consécutifs sont à au plus MAX_KEPT_GAP_MS
+    /// d'écart, sauf trou dans les données (points voisins) ou arrêt (points
+    /// intermédiaires dans la précision du premier).
+    fn assert_max_gap_while_moving(points: &[TrackPoint], kept: &[usize]) {
+        let xy = project(points);
+        for w in kept.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            let gap = points[b].timestamp - points[a].timestamp;
+            let stopped = (a + 1..=b).all(|i| distance(xy[a], xy[i]) <= points[i].tolerance());
+            assert!(
+                gap <= MAX_KEPT_GAP_MS || b == a + 1 || stopped,
+                "points {a} → {b} : {gap} ms"
+            );
+        }
     }
 
     /// Chaque point retiré est à moins de sa précision de la trace conservée.
