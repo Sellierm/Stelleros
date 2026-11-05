@@ -1,5 +1,3 @@
-// Lecture du plan de l'exploitation (KML) : parcelles, cultures, surfaces
-// déclarées et contours utilisés par le calcul de couverture.
 import type { FieldRings, LatLngPoint } from "./coverageCalculator";
 import { polygonAreaM2 } from "./geodesy";
 
@@ -9,25 +7,21 @@ export interface PlanPolygon {
 }
 
 export interface PlanField {
-  // Indice du Placemark dans le plan (identifiant de sélection sur la carte).
+  // Identifiant de sélection sur la carte.
   index: number;
   name: string;
-  // Culture normalisée (clé des couleurs de la légende), « N/A » si inconnue.
+  // Clé des couleurs de la légende, « N/A » si inconnue.
   culture: string;
-  // Surface des contours (enclaves déduites), mesurée comme dans My Maps ;
-  // à défaut de contour, la surface déclarée.
+  // Surface des contours ; à défaut de contour, la surface saisie.
   surfaceHa: number;
-  // Surface saisie dans la description (« Surface (Ha) : 12,34 »), 0 sinon.
+  // « Surface (Ha) : 12,34 » de la description, 0 sinon.
   declaredHa: number;
-  // Texte brut de la description (HTML possible), affiché au clic.
   description: string;
-  // Contours d'au moins 3 sommets ; un Placemark peut en avoir plusieurs.
   polygons: PlanPolygon[];
 }
 
 export interface FarmPlan {
   fields: PlanField[];
-  // Somme des surfaces des parcelles (voir PlanField.surfaceHa).
   totalHa: number;
   cropTotals: Record<string, number>;
   // Contours pour le calcul de couverture, nommés « 12 · Blé ».
@@ -37,7 +31,6 @@ export interface FarmPlan {
 export const normalizeCultureName = (str: string) => {
   if (!str) return "N/A";
   str = str.toLowerCase();
-  // Remove angle brackets if any HTML slipped through
   str = str.replace(/[<>]/g, "");
 
   if (str.includes("pdt")) return "Pdt";
@@ -157,7 +150,6 @@ export function parseKmlPlan(kmlText: string): FarmPlan {
       (cropTotals[field.culture] || 0) + field.surfaceHa;
     totalHa += field.surfaceHa;
 
-    // Nom du détail par parcelle : « 12 · Blé ».
     const fieldName =
       field.name && field.culture !== "N/A"
         ? `${field.name} · ${field.culture}`
@@ -172,11 +164,8 @@ export function parseKmlPlan(kmlText: string): FarmPlan {
 
 const SURFACE_LINE = /^Surface\s*\(Ha\)/i;
 
-/**
- * Deux lignes d'information affichées au clic : les deux premières lignes
- * « clé : valeur » de la description, la surface saisie remplacée par celle
- * des contours (ajoutée en tête si la description n'en a pas).
- */
+// Infobulle : deux premières lignes « clé : valeur » de la description, avec
+// la surface des contours à la place de la surface saisie.
 export function fieldInfoLines(field: PlanField): [string, string] {
   const surface = `Surface (Ha) : ${field.surfaceHa.toFixed(2)}`;
   const lines = field.description

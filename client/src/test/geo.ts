@@ -1,4 +1,3 @@
-// Aides géométriques des tests de surface.
 import type { LatLngPoint } from "../utils/coverageCalculator";
 import { EARTH_RADIUS_M } from "../utils/geodesy";
 
@@ -17,7 +16,6 @@ export function at(x: number, y: number, tS?: number): LatLngPoint {
   };
 }
 
-/** Rectangle parcouru dans le sens trigonométrique. */
 export function rect(x0: number, y0: number, x1: number, y1: number) {
   return [at(x0, y0), at(x1, y0), at(x1, y1), at(x0, y1)];
 }
@@ -46,7 +44,6 @@ export function stadium(length: number, width: number) {
   return length * width + Math.PI * (width / 2) ** 2;
 }
 
-/** Aire exacte, sur la sphère, d'un contour [lat, lng] rectangle. */
 export function sphericalBoxArea(points: LatLngPoint[]) {
   const lats = points.map(({ lat }) => (lat * Math.PI) / 180);
   const lngs = points.map(({ lng }) => (lng * Math.PI) / 180);

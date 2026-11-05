@@ -1,5 +1,3 @@
-// Distances et surfaces sur la sphère terrestre.
-
 interface LatLng {
   lat: number;
   lng: number;
@@ -11,11 +9,7 @@ export const EARTH_RADIUS_M = 6378137;
 
 const DEG2RAD = Math.PI / 180;
 
-/**
- * Aire (m²) d'un anneau [lat, lng] sur la sphère, quel que soit son sens de
- * parcours, fermé (premier sommet répété, comme en KML) ou non. Formule de
- * Chamberlain et Duquette (2007), celle de Google Maps.
- */
+// Formule de Chamberlain et Duquette, comme Google Maps.
 export function ringAreaM2(ring: LatLng[]): number {
   if (ring.length < 3) return 0;
   let sum = 0;
@@ -30,7 +24,6 @@ export function ringAreaM2(ring: LatLng[]): number {
   return Math.abs((sum * EARTH_RADIUS_M * EARTH_RADIUS_M) / 2);
 }
 
-/** Aire (m²) d'un contour, enclaves déduites. */
 export function polygonAreaM2(outer: LatLng[], holes: LatLng[][] = []) {
   const holesArea = holes.reduce((sum, hole) => sum + ringAreaM2(hole), 0);
   return Math.max(0, ringAreaM2(outer) - holesArea);

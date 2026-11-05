@@ -4,18 +4,15 @@ import { computeCoverageArea, type LatLngPoint } from "./coverageCalculator";
 import { fieldInfoLines, normalizeCultureName, parseKmlPlan } from "./kmlPlan";
 import { at, pass, rect, sphericalBoxArea, stadium } from "../test/geo";
 
-/** Surface (ha) sur la sphère d'un rectangle du repère de test. */
 const boxHa = (...corners: [number, number, number, number]) =>
   sphericalBoxArea(rect(...corners)) / 10000;
 
-// Plan KML minimal, sur le modèle d'un export Google My Maps.
 const kml = (...placemarks: string[]) =>
   `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Plan 2026</name>
 ${placemarks.join("\n")}
 </Document></kml>`;
 
-// Anneau fermé (premier sommet répété), avec altitude comme dans les exports.
 const ring = (points: LatLngPoint[]) =>
   `<LinearRing><coordinates>${[...points, points[0]]
     .map(({ lat, lng }) => `${lng},${lat},0`)
@@ -67,7 +64,6 @@ describe("parseKmlPlan", () => {
       culture: "Blé",
       declaredHa: 12.34,
     });
-    // La surface retenue est celle du contour (100 m × 100 m), pas la saisie.
     expect(field.surfaceHa).toBeCloseTo(boxHa(0, 0, 100, 100), 9);
     expect(field.surfaceHa).toBeCloseTo(1, 4);
     // Anneau KML fermé : 4 sommets + le premier répété.
@@ -112,7 +108,6 @@ describe("parseKmlPlan", () => {
   it("additionne les surfaces des contours, au total et par culture", () => {
     const plan = parseKmlPlan(
       kml(
-        // Surface saisie fausse : ignorée, le contour fait 1 ha.
         placemark({
           name: "1",
           culture: "Blé",
@@ -195,7 +190,6 @@ describe("parseKmlPlan", () => {
     expect(field.polygons).toHaveLength(2);
     expect(field.polygons[0].holes).toHaveLength(1);
     expect(field.polygons[1].holes).toEqual([]);
-    // Les deux contours portent le même nom : regroupés dans le détail.
     expect(plan.fieldPolygons.map((polygon) => polygon.name)).toEqual([
       "7 · Colza",
       "7 · Colza",
@@ -285,8 +279,7 @@ describe("parseKmlPlan", () => {
 });
 
 describe("plan KML et calcul de couverture", () => {
-  it("retrouve la surface déclarée d'une parcelle à partir de son contour", () => {
-    // 250 m × 400 m = 10 ha, déclarés « 10,00 ».
+  it("donne la même surface de parcelle au plan et au détail de couverture", () => {
     const plan = parseKmlPlan(
       kml(
         placemark({
@@ -303,7 +296,6 @@ describe("plan KML et calcul de couverture", () => {
     ]);
     const [detail] = result.fields;
     expect(detail.name).toBe("12 · Blé");
-    // Même surface de parcelle dans la légende et dans le détail.
     expect(detail.areaM2 / 10000).toBeCloseTo(plan.fields[0].surfaceHa, 9);
     expect(plan.fields[0].surfaceHa).toBeCloseTo(10, 2);
     expect(

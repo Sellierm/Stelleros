@@ -20,7 +20,6 @@ describe("ringAreaM2", () => {
 
   it("utilise le rayon de Google Maps (outil de mesure de My Maps)", () => {
     expect(EARTH_RADIUS_M).toBe(6378137);
-    // Un degré sur un degré à l'équateur : R² × π/180 × sin(1°).
     const square = [
       { lat: 0, lng: 0 },
       { lat: 0, lng: 1 },
@@ -45,8 +44,6 @@ describe("ringAreaM2", () => {
   });
 
   it("mesure un triangle et un contour non convexe", () => {
-    // Triangle rectangle de 300 m × 200 m : 3 ha à 0,01 % près (la grille
-    // de test est un plan local, la mesure se fait sur la sphère).
     expect(
       relativeError(ringAreaM2([at(0, 0), at(300, 0), at(0, 200)]), 30000),
     ).toBeLessThan(1e-4);

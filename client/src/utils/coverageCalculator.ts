@@ -323,8 +323,7 @@ export function computeCoverageArea(
     }
     return {
       name: name?.trim() || `Contour ${index + 1}`,
-      // Sur la sphère, comme la surface des parcelles du plan (kmlPlan.ts) :
-      // sans l'erreur de la projection, qui croît avec la distance à `ref`.
+      // Même mesure que la surface des parcelles du plan (kmlPlan.ts).
       areaM2: polygonAreaM2(outer, validHoles),
       outer: outerM,
       holes: holesM,

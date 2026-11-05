@@ -239,7 +239,6 @@ describe("computeCoverageArea", () => {
     });
 
     it("mesure et découpe une parcelle non convexe (en L)", () => {
-      // 200 m × 200 m sans le quart nord-est : 30 000 m².
       const lShape = [at(0, 0), at(200, 0), at(200, 100), at(100, 100), at(100, 200), at(0, 200)];
       const upper = pass([50.5, 150.5], [150.5, 150.5]);
       const result = computeCoverageArea([lShape], [track(upper)]);
@@ -250,8 +249,6 @@ describe("computeCoverageArea", () => {
     });
 
     it("mesure une parcelle éloignée sur la sphère, sans erreur de projection", () => {
-      // La grille utilise une seule projection pour toute l'exploitation,
-      // centrée sur le premier sommet du plan ; la surface des parcelles non.
       const far = rect(3500, 3500, 3800, 3900);
       const result = computeCoverageArea([FIELD, { outer: far, name: "loin" }], [track(PASS)]);
       const exact = sphericalBoxArea(far);
@@ -259,8 +256,7 @@ describe("computeCoverageArea", () => {
     });
 
     it("compte entièrement une parcelle éloignée entièrement travaillée", () => {
-      // À 5 km du premier sommet, l'écart entre la grille projetée et la
-      // surface sur la sphère reste sous 0,2 % : arrondi à 100 % à l'écran.
+      // La grille est projetée depuis le premier sommet du plan, à 5 km.
       const points: LatLngPoint[] = [];
       for (let k = 0; k < 20; k++) {
         const y = 3501.5 + 3 * k;
@@ -286,19 +282,15 @@ describe("computeCoverageArea", () => {
     });
 
     it("suit une trajectoire courbe (cercle de 30 m de rayon)", () => {
-      // 2 m/s, un point par seconde : environ 94 points par tour.
       const steps = Math.round((2 * Math.PI * 30) / 2);
       const circle = Array.from({ length: steps + 1 }, (_, i) => {
         const angle = (2 * Math.PI * i) / steps;
         return at(100 + 30 * Math.cos(angle), 100 + 30 * Math.sin(angle), i);
       });
-      // Couronne de 3 m de large : 2π × 30 × 3.
       expectArea(area([FIELD], [track(circle)]), 2 * Math.PI * 30 * 3);
     });
 
     it("compte une seule fois le recouvrement entre passages voisins", () => {
-      // Outil de 3 m, passages tous les 2,5 m : 24 × 60 × 3 = 4 320 m² de
-      // bandes, mais la parcelle ne fait que 3 600 m².
       const points: LatLngPoint[] = [];
       for (let k = 0; k < 24; k++) {
         const y = 1.25 + 2.5 * k;
@@ -309,8 +301,7 @@ describe("computeCoverageArea", () => {
     });
 
     it("laisse des manques entre passages trop espacés", () => {
-      // Outil de 3 m, passages tous les 4 m : 75 % de la parcelle. Demi-tours
-      // hors de la parcelle : dedans, ils seraient comptés comme travaillés.
+      // Demi-tours hors de la parcelle : dedans, ils compteraient.
       const points: LatLngPoint[] = [];
       for (let k = 0; k < 15; k++) {
         const y = 2.25 + 4 * k;
@@ -321,8 +312,6 @@ describe("computeCoverageArea", () => {
     });
 
     it("compte comme travaillés les demi-tours dans la parcelle (limite connue)", () => {
-      // Sans information « outil levé », un demi-tour de quelques secondes
-      // ressemble à un passage : il bouche ici une partie des manques.
       const points: LatLngPoint[] = [];
       for (let k = 0; k < 15; k++) {
         const y = 2.25 + 4 * k;
