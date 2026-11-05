@@ -1,6 +1,7 @@
 // Lecture du plan de l'exploitation (KML) : parcelles, cultures, surfaces
 // déclarées et contours utilisés par le calcul de couverture.
 import type { FieldRings, LatLngPoint } from "./coverageCalculator";
+import { polygonAreaM2 } from "./geodesy";
 
 export interface PlanPolygon {
   outer: LatLngPoint[];
@@ -13,8 +14,11 @@ export interface PlanField {
   name: string;
   // Culture normalisée (clé des couleurs de la légende), « N/A » si inconnue.
   culture: string;
-  // Surface déclarée dans la description (« Surface (Ha) : 12,34 »), 0 sinon.
+  // Surface des contours (enclaves déduites), mesurée comme dans My Maps ;
+  // à défaut de contour, la surface déclarée.
   surfaceHa: number;
+  // Surface saisie dans la description (« Surface (Ha) : 12,34 »), 0 sinon.
+  declaredHa: number;
   // Texte brut de la description (HTML possible), affiché au clic.
   description: string;
   // Contours d'au moins 3 sommets ; un Placemark peut en avoir plusieurs.
@@ -23,7 +27,7 @@ export interface PlanField {
 
 export interface FarmPlan {
   fields: PlanField[];
-  // Somme des surfaces déclarées, parcelles sans contour comprises.
+  // Somme des surfaces des parcelles (voir PlanField.surfaceHa).
   totalHa: number;
   cropTotals: Record<string, number>;
   // Contours pour le calcul de couverture, nommés « 12 · Blé ».
@@ -69,14 +73,14 @@ function parsePlacemark(placemark: Element, index: number): PlanField {
       .find((child) => child.localName === "name")
       ?.textContent?.trim() ?? "";
 
-  let surfaceHa = 0;
+  let declaredHa = 0;
   let cultureStr = "";
   const desc: Element | undefined =
     placemark.getElementsByTagName("description")[0];
   if (desc) {
     const m = desc.textContent?.match(/Surface\s*\(Ha\)\s*:\s*([\d.,]+)/i);
     if (m) {
-      surfaceHa = Number.parseFloat(m[1].replace(",", "."));
+      declaredHa = Number.parseFloat(m[1].replace(",", "."));
     }
   }
 
@@ -115,11 +119,20 @@ function parsePlacemark(placemark: Element, index: number): PlanField {
     if (outer.length >= 3) polygons.push({ outer, holes });
   }
 
+  const surfaceHa =
+    polygons.length > 0
+      ? polygons.reduce(
+          (sum, { outer, holes }) => sum + polygonAreaM2(outer, holes),
+          0,
+        ) / 10000
+      : declaredHa;
+
   return {
     index,
     name,
     culture: normalizeCultureName(cultureStr),
     surfaceHa,
+    declaredHa,
     description: desc?.textContent || "",
     polygons,
   };
@@ -155,4 +168,27 @@ export function parseKmlPlan(kmlText: string): FarmPlan {
   }
 
   return { fields, totalHa, cropTotals, fieldPolygons };
+}
+
+const SURFACE_LINE = /^Surface\s*\(Ha\)/i;
+
+/**
+ * Deux lignes d'information affichées au clic : les deux premières lignes
+ * « clé : valeur » de la description, la surface saisie remplacée par celle
+ * des contours (ajoutée en tête si la description n'en a pas).
+ */
+export function fieldInfoLines(field: PlanField): [string, string] {
+  const surface = `Surface (Ha) : ${field.surfaceHa.toFixed(2)}`;
+  const lines = field.description
+    .replace(/<[^>]+>/g, "\n")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.includes(":"))
+    .map((line) => {
+      if (SURFACE_LINE.test(line)) return surface;
+      const index = line.indexOf(":");
+      return `${line.slice(0, index)} ${line.slice(index)}`;
+    });
+  if (!lines.includes(surface)) lines.unshift(surface);
+  return [lines[0], lines[1] ?? ""];
 }

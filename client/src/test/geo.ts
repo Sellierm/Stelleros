@@ -1,11 +1,11 @@
 // Aides géométriques des tests de surface.
 import type { LatLngPoint } from "../utils/coverageCalculator";
+import { EARTH_RADIUS_M } from "../utils/geodesy";
 
 // Repère local : x mètres vers l'est, y mètres vers le nord d'un point de
 // référence (premier sommet du premier champ, comme le calcul).
 export const LAT0 = 50.4;
 export const LNG0 = 3.0;
-export const EARTH_RADIUS_M = 6371000;
 export const M_PER_DEG = (EARTH_RADIUS_M * Math.PI) / 180;
 export const T0 = 1_800_000_000_000;
 

@@ -17,7 +17,7 @@ import type {
   FieldRings,
   LatLngPoint,
 } from "../utils/coverageCalculator";
-import { parseKmlPlan } from "../utils/kmlPlan";
+import { fieldInfoLines, parseKmlPlan } from "../utils/kmlPlan";
 import "./FieldsPage.css";
 
 type LatLngLiteral = google.maps.LatLngLiteral;
@@ -674,7 +674,7 @@ export default function FieldsPage() {
           setSelectedFieldId(null);
 
           for (const field of fields) {
-            const { index: i, culture: cultureName, description } = field;
+            const { index: i, culture: cultureName } = field;
             for (const { outer: points, holes } of field.polygons) {
               const overlay = new google.maps.Polygon({
                 paths: [points, ...holes],
@@ -692,19 +692,7 @@ export default function FieldsPage() {
                   setMapInfo(["", ""]);
                   return;
                 }
-                const lines = description
-                  .replace(/<[^>]+>/g, "\n")
-                  .split(/\r?\n/)
-                  .map((line) => line.trim())
-                  .filter(Boolean);
-                const infos = lines
-                  .filter((line) => line.includes(":"))
-                  .slice(0, 2)
-                  .map((line) => {
-                    const index = line.indexOf(":");
-                    return `${line.slice(0, index)} ${line.slice(index)}`;
-                  });
-                setMapInfo([infos[0] || "", infos[1] || ""]);
+                setMapInfo(fieldInfoLines(field));
                 setSelectedFieldId(i);
                 setSelectedCrop(cultureName !== "N/A" ? cultureName : null);
               });

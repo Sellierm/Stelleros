@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import { computeCoverageArea, type LatLngPoint } from "./coverageCalculator";
-import { normalizeCultureName, parseKmlPlan } from "./kmlPlan";
-import { at, pass, rect, stadium } from "../test/geo";
+import { fieldInfoLines, normalizeCultureName, parseKmlPlan } from "./kmlPlan";
+import { at, pass, rect, sphericalBoxArea, stadium } from "../test/geo";
+
+/** Surface (ha) sur la sphère d'un rectangle du repère de test. */
+const boxHa = (...corners: [number, number, number, number]) =>
+  sphericalBoxArea(rect(...corners)) / 10000;
 
 // Plan KML minimal, sur le modèle d'un export Google My Maps.
 const kml = (...placemarks: string[]) =>
@@ -45,7 +49,7 @@ function placemark({
 }
 
 describe("parseKmlPlan", () => {
-  it("lit le nom, la culture et la surface déclarée d'une parcelle", () => {
+  it("lit le nom, la culture, la surface saisie et mesure le contour", () => {
     const plan = parseKmlPlan(
       kml(
         placemark({
@@ -61,8 +65,11 @@ describe("parseKmlPlan", () => {
       index: 0,
       name: "12",
       culture: "Blé",
-      surfaceHa: 12.34,
+      declaredHa: 12.34,
     });
+    // La surface retenue est celle du contour (100 m × 100 m), pas la saisie.
+    expect(field.surfaceHa).toBeCloseTo(boxHa(0, 0, 100, 100), 9);
+    expect(field.surfaceHa).toBeCloseTo(1, 4);
     // Anneau KML fermé : 4 sommets + le premier répété.
     expect(field.polygons).toHaveLength(1);
     expect(field.polygons[0].outer).toHaveLength(5);
@@ -70,7 +77,7 @@ describe("parseKmlPlan", () => {
     expect(field.polygons[0].outer[2].lng).toBeCloseTo(at(100, 100).lng, 9);
   });
 
-  it("lit la surface avec un point ou une virgule décimale", () => {
+  it("lit la surface saisie avec un point ou une virgule décimale", () => {
     const plan = parseKmlPlan(
       kml(
         placemark({ description: "Surface (Ha) : 3.5" }),
@@ -78,7 +85,7 @@ describe("parseKmlPlan", () => {
         placemark({ description: "Surface (Ha) : 10" }),
       ),
     );
-    expect(plan.fields.map((field) => field.surfaceHa)).toEqual([
+    expect(plan.fields.map((field) => field.declaredHa)).toEqual([
       3.5, 0.75, 10,
     ]);
   });
@@ -102,38 +109,60 @@ describe("parseKmlPlan", () => {
     expect(plan.fields[0].culture).toBe("Colza");
   });
 
-  it("additionne les surfaces déclarées, au total et par culture", () => {
+  it("additionne les surfaces des contours, au total et par culture", () => {
     const plan = parseKmlPlan(
       kml(
+        // Surface saisie fausse : ignorée, le contour fait 1 ha.
         placemark({
           name: "1",
           culture: "Blé",
           description: "Surface (Ha) : 10",
+          geometry: polygon(rect(0, 0, 100, 100)),
         }),
         placemark({
           name: "2",
           culture: "Blé tendre",
-          description: "Surface (Ha) : 2,5",
+          geometry: polygon(rect(200, 0, 450, 100)),
         }),
         placemark({
           name: "3",
           culture: "Colza",
-          description: "Surface (Ha) : 4",
+          geometry: polygon(rect(0, 200, 200, 400)),
         }),
         placemark({
           name: "4",
           culture: "Orge",
-          description: "Surface (Ha) : 1",
+          geometry: polygon(rect(500, 0, 600, 100)),
         }),
-        // Sans surface déclarée : 0 ha.
-        placemark({ name: "5", culture: "Colza" }),
       ),
     );
-    expect(plan.totalHa).toBeCloseTo(17.5, 9);
-    expect(plan.cropTotals).toEqual({ Blé: 12.5, Colza: 4, "N/A": 1 });
+    const ble = boxHa(0, 0, 100, 100) + boxHa(200, 0, 450, 100);
+    const colza = boxHa(0, 200, 200, 400);
+    const autre = boxHa(500, 0, 600, 100);
+    expect(plan.cropTotals.Blé).toBeCloseTo(ble, 9);
+    expect(plan.cropTotals.Colza).toBeCloseTo(colza, 9);
+    expect(plan.cropTotals["N/A"]).toBeCloseTo(autre, 9);
+    expect(plan.totalHa).toBeCloseTo(ble + colza + autre, 9);
+    expect(plan.totalHa).toBeCloseTo(8.5, 3);
   });
 
-  it("compte dans les totaux une parcelle sans contour", () => {
+  it("déduit les enclaves et additionne les contours d'une parcelle", () => {
+    const plan = parseKmlPlan(
+      kml(
+        placemark({
+          geometry: `<MultiGeometry>${polygon(rect(0, 0, 200, 200), [
+            rect(80, 80, 120, 120),
+          ])}${polygon(rect(300, 0, 400, 100))}</MultiGeometry>`,
+        }),
+      ),
+    );
+    expect(plan.fields[0].surfaceHa).toBeCloseTo(
+      boxHa(0, 0, 200, 200) - boxHa(80, 80, 120, 120) + boxHa(300, 0, 400, 100),
+      9,
+    );
+  });
+
+  it("garde la surface saisie d'une parcelle sans contour", () => {
     const plan = parseKmlPlan(
       kml(
         placemark({
@@ -144,7 +173,8 @@ describe("parseKmlPlan", () => {
         placemark({ culture: "Blé", description: "Surface (Ha) : 3" }),
       ),
     );
-    expect(plan.totalHa).toBe(5);
+    expect(plan.fields[0].surfaceHa).toBe(2);
+    expect(plan.totalHa).toBeCloseTo(2 + boxHa(0, 0, 100, 100), 9);
     expect(plan.fields[0].polygons).toEqual([]);
     expect(plan.fieldPolygons).toHaveLength(1);
   });
@@ -273,9 +303,9 @@ describe("plan KML et calcul de couverture", () => {
     ]);
     const [detail] = result.fields;
     expect(detail.name).toBe("12 · Blé");
-    expect(
-      Math.abs(detail.areaM2 / 10000 - plan.fields[0].surfaceHa),
-    ).toBeLessThan(0.005);
+    // Même surface de parcelle dans la légende et dans le détail.
+    expect(detail.areaM2 / 10000).toBeCloseTo(plan.fields[0].surfaceHa, 9);
+    expect(plan.fields[0].surfaceHa).toBeCloseTo(10, 2);
     expect(
       Math.abs(detail.coveredM2 - stadium(100, 3)) / stadium(100, 3),
     ).toBeLessThan(0.02);
@@ -295,11 +325,40 @@ describe("plan KML et calcul de couverture", () => {
     const result = computeCoverageArea(plan.fieldPolygons, [
       { deviceId: "tracteur", points: passage, widthM: 3 },
     ]);
-    expect(result.fields[0].areaM2).toBeCloseTo(40000 - 1600, 0);
+    expect(result.fields[0].areaM2 / 10000).toBeCloseTo(
+      plan.fields[0].surfaceHa,
+      9,
+    );
     const expected = stadium(100, 3) - 40 * 3;
     expect(Math.abs(result.totalAreaM2 - expected) / expected).toBeLessThan(
       0.02,
     );
+  });
+});
+
+// Descriptions au format des plans réels : « Clé: valeur » séparés par <br>.
+describe("fieldInfoLines", () => {
+  const field = (description: string, geometry?: string) =>
+    parseKmlPlan(kml(placemark({ description, geometry }))).fields[0];
+
+  it("remplace la surface saisie par celle du contour", () => {
+    expect(
+      fieldInfoLines(field("Surface (Ha): 17.56<br>Culture: pdt")),
+    ).toEqual(["Surface (Ha) : 1.00", "Culture : pdt"]);
+  });
+
+  it("ajoute la surface en tête si la description n'en a pas", () => {
+    expect(fieldInfoLines(field("Culture: Blé<br>Remarque: drainée"))).toEqual([
+      "Surface (Ha) : 1.00",
+      "Culture : Blé",
+    ]);
+    expect(fieldInfoLines(field(""))).toEqual(["Surface (Ha) : 1.00", ""]);
+  });
+
+  it("affiche la surface saisie d'une parcelle sans contour", () => {
+    expect(
+      fieldInfoLines(field("Surface (Ha): 2,5<br>Culture: Colza", "")),
+    ).toEqual(["Surface (Ha) : 2.50", "Culture : Colza"]);
   });
 });
 

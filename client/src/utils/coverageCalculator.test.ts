@@ -39,7 +39,7 @@ describe("computeCoverageArea", () => {
     expect(result.devicesUsed).toEqual(["tracteur"]);
     expect(result.warnings).toEqual([]);
     expect(result.fields).toEqual([
-      { name: "Contour 1", areaM2: expect.closeTo(40000, 3), coveredM2: result.totalAreaM2 },
+      { name: "Contour 1", areaM2: expect.closeTo(sphericalBoxArea(FIELD), 4), coveredM2: result.totalAreaM2 },
     ]);
   });
 
@@ -153,8 +153,8 @@ describe("computeCoverageArea", () => {
       const result = computeCoverageArea(fields, [track(PASS)]);
       const [a, b] = result.fields;
       expect(result.fields.map((field) => field.name)).toEqual(["A", "B"]);
-      expect(a.areaM2).toBeCloseTo(20000, 3);
-      expect(b.areaM2).toBeCloseTo(20000, 3);
+      expect(a.areaM2).toBeCloseTo(sphericalBoxArea(rect(0, 0, 100, 200)), 4);
+      expect(b.areaM2).toBeCloseTo(sphericalBoxArea(rect(100, 0, 200, 200)), 4);
       expectArea(a.coveredM2, 49.5 * 3 + stadium(0, 3) / 2);
       expectArea(b.coveredM2, 50.5 * 3 + stadium(0, 3) / 2);
       expect(a.coveredM2 + b.coveredM2).toBe(result.totalAreaM2);
@@ -163,7 +163,7 @@ describe("computeCoverageArea", () => {
     it("déduit les enclaves de la surface de la parcelle", () => {
       const field = { outer: FIELD, holes: [rect(80, 80, 120, 120)], name: "P" };
       const [detail] = computeCoverageArea([field], [track(PASS)]).fields;
-      expect(detail.areaM2).toBeCloseTo(40000 - 1600, 3);
+      expect(detail.areaM2).toBeCloseTo(sphericalBoxArea(FIELD) - sphericalBoxArea(rect(80, 80, 120, 120)), 4);
     });
 
     it("regroupe les contours d'une même parcelle", () => {
@@ -174,7 +174,7 @@ describe("computeCoverageArea", () => {
       const result = computeCoverageArea(fields, [track(PASS)]);
       expect(result.fieldsProcessed).toBe(2);
       expect(result.fields).toHaveLength(1);
-      expect(result.fields[0].areaM2).toBeCloseTo(40000, 3);
+      expect(result.fields[0].areaM2).toBeCloseTo(sphericalBoxArea(FIELD), 4);
       expect(result.fields[0].coveredM2).toBe(result.totalAreaM2);
     });
 
@@ -226,17 +226,15 @@ describe("computeCoverageArea", () => {
     const fieldArea = (field: FieldPolygon) =>
       computeCoverageArea([field], [track(PASS)]).fields[0].areaM2;
 
-    it("ne dépend pas du sens de parcours du contour", () => {
-      // Même premier sommet : il sert de référence à la projection.
-      const clockwise = [FIELD[0], ...FIELD.slice(1).reverse()];
-      expect(fieldArea(clockwise)).toBeCloseTo(fieldArea(FIELD), 6);
-      expect(fieldArea(FIELD)).toBeCloseTo(40000, 3);
+    it("ne dépend ni du sens de parcours ni du premier sommet du contour", () => {
+      expect(fieldArea([...FIELD].reverse())).toBeCloseTo(sphericalBoxArea(FIELD), 4);
+      expect(fieldArea([...FIELD.slice(2), ...FIELD.slice(0, 2)])).toBeCloseTo(sphericalBoxArea(FIELD), 4);
     });
 
     it("accepte un contour fermé comme en KML (premier sommet répété)", () => {
       const closed = [...FIELD, FIELD[0]];
       const result = computeCoverageArea([closed], [track(PASS)]);
-      expect(result.fields[0].areaM2).toBeCloseTo(40000, 3);
+      expect(result.fields[0].areaM2).toBeCloseTo(sphericalBoxArea(FIELD), 4);
       expectArea(result.totalAreaM2, stadium(100, 3));
     });
 
@@ -245,18 +243,33 @@ describe("computeCoverageArea", () => {
       const lShape = [at(0, 0), at(200, 0), at(200, 100), at(100, 100), at(100, 200), at(0, 200)];
       const upper = pass([50.5, 150.5], [150.5, 150.5]);
       const result = computeCoverageArea([lShape], [track(upper)]);
-      expect(result.fields[0].areaM2).toBeCloseTo(30000, 3);
+      const expected = sphericalBoxArea(rect(0, 0, 200, 100)) + sphericalBoxArea(rect(0, 100, 100, 200));
+      expect(result.fields[0].areaM2).toBeCloseTo(expected, 4);
       // Seule la moitié ouest du passage est dans la parcelle.
       expectArea(result.totalAreaM2, 49.5 * 3 + stadium(0, 3) / 2);
     });
 
-    it("reste à 0,2 % de l'aire sur la sphère pour une parcelle à 5 km", () => {
-      // Une seule projection pour toute l'exploitation, centrée sur le premier
-      // sommet du plan : l'erreur croît avec la distance à ce point.
+    it("mesure une parcelle éloignée sur la sphère, sans erreur de projection", () => {
+      // La grille utilise une seule projection pour toute l'exploitation,
+      // centrée sur le premier sommet du plan ; la surface des parcelles non.
       const far = rect(3500, 3500, 3800, 3900);
       const result = computeCoverageArea([FIELD, { outer: far, name: "loin" }], [track(PASS)]);
       const exact = sphericalBoxArea(far);
-      expect(Math.abs(result.fields[1].areaM2 - exact) / exact).toBeLessThan(0.002);
+      expect(Math.abs(result.fields[1].areaM2 - exact) / exact).toBeLessThan(1e-9);
+    });
+
+    it("compte entièrement une parcelle éloignée entièrement travaillée", () => {
+      // À 5 km du premier sommet, l'écart entre la grille projetée et la
+      // surface sur la sphère reste sous 0,2 % : arrondi à 100 % à l'écran.
+      const points: LatLngPoint[] = [];
+      for (let k = 0; k < 20; k++) {
+        const y = 3501.5 + 3 * k;
+        const [from, to]: [number, number][] = k % 2 ? [[3570, y], [3490, y]] : [[3490, y], [3570, y]];
+        points.push(...pass(from, to, { startS: k * 42 }));
+      }
+      const far = { outer: rect(3500, 3500, 3560, 3560), name: "loin" };
+      const [, detail] = computeCoverageArea([FIELD, far], [track(points)]).fields;
+      expect(Math.abs(detail.coveredM2 / detail.areaM2 - 1)).toBeLessThan(0.002);
     });
   });
 
