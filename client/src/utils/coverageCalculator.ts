@@ -1,3 +1,5 @@
+import { EARTH_RADIUS_M, polygonAreaM2 } from "./geodesy";
+
 export interface LatLngPoint {
   lat: number;
   lng: number;
@@ -74,7 +76,6 @@ interface TrackM {
   segments: [PointM, PointM][];
 }
 
-const EARTH_RADIUS_M = 6371000;
 const DEG2RAD = Math.PI / 180;
 const MAX_GRID_CELLS_PER_FIELD = 4_000_000;
 // Sans horodatage, on ne relie pas deux points trop éloignés (perte de signal).
@@ -100,14 +101,6 @@ function projectToMeters(
     EARTH_RADIUS_M * (lon - refLon) * DEG2RAD * Math.cos(refLat * DEG2RAD);
   const y = EARTH_RADIUS_M * (lat - refLat) * DEG2RAD;
   return { x, y };
-}
-
-function ringArea(ring: PointM[]) {
-  let twiceArea = 0;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    twiceArea += ring[j].x * ring[i].y - ring[i].x * ring[j].y;
-  }
-  return Math.abs(twiceArea) / 2;
 }
 
 function pointInRing(point: PointM, ring: PointM[]) {
@@ -313,10 +306,11 @@ export function computeCoverageArea(
   });
 
   const fields = rawFields.map(({ outer, holes, name, index }): FieldM => {
+    const validHoles = holes.filter(
+      (hole) => Array.isArray(hole) && hole.length >= 3,
+    );
     const outerM = outer.map(project);
-    const holesM = holes
-      .filter((hole) => Array.isArray(hole) && hole.length >= 3)
-      .map((hole) => hole.map(project));
+    const holesM = validHoles.map((hole) => hole.map(project));
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
@@ -327,10 +321,10 @@ export function computeCoverageArea(
       maxX = Math.max(maxX, point.x);
       maxY = Math.max(maxY, point.y);
     }
-    const holesArea = holesM.reduce((sum, hole) => sum + ringArea(hole), 0);
     return {
       name: name?.trim() || `Contour ${index + 1}`,
-      areaM2: Math.max(0, ringArea(outerM) - holesArea),
+      // Même mesure que la surface des parcelles du plan (kmlPlan.ts).
+      areaM2: polygonAreaM2(outer, validHoles),
       outer: outerM,
       holes: holesM,
       minX,

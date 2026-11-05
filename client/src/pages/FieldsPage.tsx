@@ -17,6 +17,7 @@ import type {
   FieldRings,
   LatLngPoint,
 } from "../utils/coverageCalculator";
+import { fieldInfoLines, parseKmlPlan } from "../utils/kmlPlan";
 import "./FieldsPage.css";
 
 type LatLngLiteral = google.maps.LatLngLiteral;
@@ -47,36 +48,6 @@ const todayParis = () => PARIS_DATE_FORMAT.format(new Date());
 const GPS_PANEL_REFRESH_MS = 1000;
 // Détail par parcelle : en dessous (0,01 ha), simple passage en bordure.
 const MIN_LISTED_COVERAGE_M2 = 100;
-
-const normalizeCultureName = (str: string) => {
-  if (!str) return "N/A";
-  str = str.toLowerCase();
-  // Remove angle brackets if any HTML slipped through
-  str = str.replace(/[<>]/g, "");
-
-  if (str.includes("pdt")) return "Pdt";
-  if (str.includes("bl")) return "Blé";
-  if (str.includes("seigle")) return "Seigle/Maïs";
-  if (str.includes("ma")) return "Maïs";
-  if (str.includes("bett")) return "Betteraves";
-  if (str.includes("colz")) return "Colza";
-  if (str.includes("herb") || str.includes("prairie")) return "Herbe";
-  return "N/A";
-};
-
-const parseKmlCoordinates = (coordinatesNode: Element | undefined) => {
-  if (!coordinatesNode) return [];
-  return (coordinatesNode.textContent ?? "")
-    .trim()
-    .split(/\s+/)
-    .map((tuple) => {
-      const [lng, lat] = tuple.split(",").map(Number);
-      return { lat, lng };
-    })
-    .filter(
-      (point) => Number.isFinite(point.lat) && Number.isFinite(point.lng),
-    );
-};
 
 // Pour l'affichage seulement : écarte les points à moins d'environ 1 m du
 // précédent (tracteur à l'arrêt, dérive GPS). Le calcul de surface garde tout.
@@ -691,16 +662,9 @@ export default function FieldsPage() {
           }
 
           const kmlText = await response.text();
-          const kmlDoc = new DOMParser().parseFromString(kmlText, "text/xml");
-          if (kmlDoc.querySelector("parsererror")) {
-            throw new Error("Invalid KML document");
-          }
+          const { fields, totalHa, cropTotals, fieldPolygons } =
+            parseKmlPlan(kmlText);
 
-          const placemarks = kmlDoc.getElementsByTagName("Placemark");
-
-          let total = 0;
-          const cTotals: Record<string, number> = {};
-          const fieldPolygons: FieldRings[] = [];
           fieldOverlaysRef.current.forEach(({ overlay }) =>
             overlay.setMap(null),
           );
@@ -709,120 +673,38 @@ export default function FieldsPage() {
           selectionRef.current = { ...selectionRef.current, fieldId: null };
           setSelectedFieldId(null);
 
-          for (let i = 0; i < placemarks.length; i++) {
-            let surface = 0;
-            let cultureStr = "";
-            const placemarkName =
-              Array.from(placemarks[i].children)
-                .find((child) => child.localName === "name")
-                ?.textContent?.trim() ?? "";
-
-            const desc: Element | undefined =
-              placemarks[i].getElementsByTagName("description")[0];
-            if (desc) {
-              const m = desc.textContent?.match(
-                /Surface\s*\(Ha\)\s*:\s*([\d.,]+)/i,
-              );
-              if (m) {
-                surface = Number.parseFloat(m[1].replace(",", "."));
-              }
+          for (const field of fields) {
+            const { index: i, culture: cultureName } = field;
+            for (const { outer: points, holes } of field.polygons) {
+              const overlay = new google.maps.Polygon({
+                paths: [points, ...holes],
+                map,
+                strokeColor: CROP_COLORS[cultureName] || "#ffffff",
+                fillColor: CROP_COLORS[cultureName] || "#ffffff",
+                clickable: true,
+                ...getFieldOverlayStyle(i, cultureName, selectionRef.current),
+              });
+              overlay.addListener("click", () => {
+                // Second clic sur la parcelle sélectionnée : désélection.
+                if (selectionRef.current.fieldId === i) {
+                  setSelectedFieldId(null);
+                  setSelectedCrop(null);
+                  setMapInfo(["", ""]);
+                  return;
+                }
+                setMapInfo(fieldInfoLines(field));
+                setSelectedFieldId(i);
+                setSelectedCrop(cultureName !== "N/A" ? cultureName : null);
+              });
+              fieldOverlaysRef.current.push({
+                overlay,
+                culture: cultureName,
+                fieldId: i,
+              });
             }
-
-            const extendedData = placemarks[i].getElementsByTagName("Data");
-            for (let j = 0; j < extendedData.length; j++) {
-              if (extendedData[j].getAttribute("name") === "Culture") {
-                const valueTag =
-                  extendedData[j].getElementsByTagName("value")[0];
-                if (valueTag) cultureStr = valueTag.textContent ?? "";
-              }
-            }
-
-            if (!cultureStr && desc) {
-              const plainDesc = (desc.textContent ?? "").replace(
-                /<[^>]+>/g,
-                "\n",
-              );
-              const mC = plainDesc.match(/Culture\s*:\s*([^\n]+)/i);
-              if (mC) cultureStr = mC[1].trim();
-            }
-
-            const cultureName = normalizeCultureName(cultureStr);
-            // Nom du détail par parcelle : « 12 · Blé ».
-            const fieldName =
-              placemarkName && cultureName !== "N/A"
-                ? `${placemarkName} · ${cultureName}`
-                : placemarkName;
-            const polygonNodes = placemarks[i].getElementsByTagName("Polygon");
-            for (let p = 0; p < polygonNodes.length; p++) {
-              const outerBoundary =
-                polygonNodes[p].getElementsByTagName("outerBoundaryIs")[0];
-              const coordinatesNode = (
-                outerBoundary || polygonNodes[p]
-              ).getElementsByTagName("coordinates")[0];
-              if (!coordinatesNode) continue;
-
-              const points = parseKmlCoordinates(coordinatesNode);
-              const holes = Array.from(
-                polygonNodes[p].getElementsByTagName("innerBoundaryIs"),
-              )
-                .map((inner) =>
-                  parseKmlCoordinates(
-                    inner.getElementsByTagName("coordinates")[0],
-                  ),
-                )
-                .filter((hole) => hole.length >= 3);
-              if (points.length >= 3) {
-                fieldPolygons.push({
-                  outer: points,
-                  holes,
-                  name: fieldName || undefined,
-                });
-                const overlay = new google.maps.Polygon({
-                  paths: [points, ...holes],
-                  map,
-                  strokeColor: CROP_COLORS[cultureName] || "#ffffff",
-                  fillColor: CROP_COLORS[cultureName] || "#ffffff",
-                  clickable: true,
-                  ...getFieldOverlayStyle(i, cultureName, selectionRef.current),
-                });
-                overlay.addListener("click", () => {
-                  // Second clic sur la parcelle sélectionnée : désélection.
-                  if (selectionRef.current.fieldId === i) {
-                    setSelectedFieldId(null);
-                    setSelectedCrop(null);
-                    setMapInfo(["", ""]);
-                    return;
-                  }
-                  const content = desc?.textContent || "";
-                  const lines = content
-                    .replace(/<[^>]+>/g, "\n")
-                    .split(/\r?\n/)
-                    .map((line) => line.trim())
-                    .filter(Boolean);
-                  const infos = lines
-                    .filter((line) => line.includes(":"))
-                    .slice(0, 2)
-                    .map((line) => {
-                      const index = line.indexOf(":");
-                      return `${line.slice(0, index)} ${line.slice(index)}`;
-                    });
-                  setMapInfo([infos[0] || "", infos[1] || ""]);
-                  setSelectedFieldId(i);
-                  setSelectedCrop(cultureName !== "N/A" ? cultureName : null);
-                });
-                fieldOverlaysRef.current.push({
-                  overlay,
-                  culture: cultureName,
-                  fieldId: i,
-                });
-              }
-            }
-
-            cTotals[cultureName] = (cTotals[cultureName] || 0) + surface;
-            total += surface;
           }
-          setTotalHa(total.toFixed(2));
-          setCropTotals(cTotals);
+          setTotalHa(totalHa.toFixed(2));
+          setCropTotals(cropTotals);
           fieldPolygonsRef.current = fieldPolygons;
           if (fieldPolygons.length > 0) {
             const bounds = new google.maps.LatLngBounds();

@@ -5,40 +5,7 @@ import {
   type FieldPolygon,
   type LatLngPoint,
 } from "./coverageCalculator";
-
-// Repère local : x mètres vers l'est, y mètres vers le nord d'un point de
-// référence (premier sommet du premier champ, comme le calcul).
-const LAT0 = 50.4;
-const LNG0 = 3.0;
-const M_PER_DEG = (6371000 * Math.PI) / 180;
-const T0 = 1_800_000_000_000;
-
-function at(x: number, y: number, tS?: number): LatLngPoint {
-  return {
-    lat: LAT0 + y / M_PER_DEG,
-    lng: LNG0 + x / (M_PER_DEG * Math.cos((LAT0 * Math.PI) / 180)),
-    t: tS === undefined ? undefined : T0 + tS * 1000,
-  };
-}
-
-function rect(x0: number, y0: number, x1: number, y1: number) {
-  return [at(x0, y0), at(x1, y0), at(x1, y1), at(x0, y1)];
-}
-
-/** Passage rectiligne à `speed` m/s, un point toutes les `stepS` s. */
-function pass(
-  from: [number, number],
-  to: [number, number],
-  { speed = 2, stepS = 1, startS = 0 } = {},
-): LatLngPoint[] {
-  const [x0, y0] = from;
-  const [x1, y1] = to;
-  const duration = Math.hypot(x1 - x0, y1 - y0) / speed;
-  const n = Math.max(1, Math.round(duration / stepS));
-  return Array.from({ length: n + 1 }, (_, i) =>
-    at(x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n, startS + (duration * i) / n),
-  );
-}
+import { at, pass, rect, sphericalBoxArea, stadium } from "../test/geo";
 
 function track(points: LatLngPoint[], widthM: number | string = 3, deviceId = "tracteur"): CoverageTrack {
   return { deviceId, points, widthM };
@@ -46,11 +13,6 @@ function track(points: LatLngPoint[], widthM: number | string = 3, deviceId = "t
 
 function area(fields: FieldPolygon[], tracks: CoverageTrack[]) {
   return computeCoverageArea(fields, tracks).totalAreaM2;
-}
-
-/** Surface d'une bande de `length` m et de largeur `width` m, bouts arrondis. */
-function stadium(length: number, width: number) {
-  return length * width + Math.PI * (width / 2) ** 2;
 }
 
 /** Mêmes points avec une précision (m) et une source. */
@@ -77,7 +39,7 @@ describe("computeCoverageArea", () => {
     expect(result.devicesUsed).toEqual(["tracteur"]);
     expect(result.warnings).toEqual([]);
     expect(result.fields).toEqual([
-      { name: "Contour 1", areaM2: expect.closeTo(40000, 3), coveredM2: result.totalAreaM2 },
+      { name: "Contour 1", areaM2: expect.closeTo(sphericalBoxArea(FIELD), 4), coveredM2: result.totalAreaM2 },
     ]);
   });
 
@@ -191,8 +153,8 @@ describe("computeCoverageArea", () => {
       const result = computeCoverageArea(fields, [track(PASS)]);
       const [a, b] = result.fields;
       expect(result.fields.map((field) => field.name)).toEqual(["A", "B"]);
-      expect(a.areaM2).toBeCloseTo(20000, 3);
-      expect(b.areaM2).toBeCloseTo(20000, 3);
+      expect(a.areaM2).toBeCloseTo(sphericalBoxArea(rect(0, 0, 100, 200)), 4);
+      expect(b.areaM2).toBeCloseTo(sphericalBoxArea(rect(100, 0, 200, 200)), 4);
       expectArea(a.coveredM2, 49.5 * 3 + stadium(0, 3) / 2);
       expectArea(b.coveredM2, 50.5 * 3 + stadium(0, 3) / 2);
       expect(a.coveredM2 + b.coveredM2).toBe(result.totalAreaM2);
@@ -201,7 +163,7 @@ describe("computeCoverageArea", () => {
     it("déduit les enclaves de la surface de la parcelle", () => {
       const field = { outer: FIELD, holes: [rect(80, 80, 120, 120)], name: "P" };
       const [detail] = computeCoverageArea([field], [track(PASS)]).fields;
-      expect(detail.areaM2).toBeCloseTo(40000 - 1600, 3);
+      expect(detail.areaM2).toBeCloseTo(sphericalBoxArea(FIELD) - sphericalBoxArea(rect(80, 80, 120, 120)), 4);
     });
 
     it("regroupe les contours d'une même parcelle", () => {
@@ -212,7 +174,7 @@ describe("computeCoverageArea", () => {
       const result = computeCoverageArea(fields, [track(PASS)]);
       expect(result.fieldsProcessed).toBe(2);
       expect(result.fields).toHaveLength(1);
-      expect(result.fields[0].areaM2).toBeCloseTo(40000, 3);
+      expect(result.fields[0].areaM2).toBeCloseTo(sphericalBoxArea(FIELD), 4);
       expect(result.fields[0].coveredM2).toBe(result.totalAreaM2);
     });
 
@@ -257,6 +219,115 @@ describe("computeCoverageArea", () => {
         const result = computeCoverageArea([FIELD], [track(withAccuracy(PASS, accuracy, "RTK RTK Fix"))]);
         expect(result.warnings).toEqual([]);
       }
+    });
+  });
+
+  describe("surface des parcelles", () => {
+    const fieldArea = (field: FieldPolygon) =>
+      computeCoverageArea([field], [track(PASS)]).fields[0].areaM2;
+
+    it("ne dépend ni du sens de parcours ni du premier sommet du contour", () => {
+      expect(fieldArea([...FIELD].reverse())).toBeCloseTo(sphericalBoxArea(FIELD), 4);
+      expect(fieldArea([...FIELD.slice(2), ...FIELD.slice(0, 2)])).toBeCloseTo(sphericalBoxArea(FIELD), 4);
+    });
+
+    it("accepte un contour fermé comme en KML (premier sommet répété)", () => {
+      const closed = [...FIELD, FIELD[0]];
+      const result = computeCoverageArea([closed], [track(PASS)]);
+      expect(result.fields[0].areaM2).toBeCloseTo(sphericalBoxArea(FIELD), 4);
+      expectArea(result.totalAreaM2, stadium(100, 3));
+    });
+
+    it("mesure et découpe une parcelle non convexe (en L)", () => {
+      const lShape = [at(0, 0), at(200, 0), at(200, 100), at(100, 100), at(100, 200), at(0, 200)];
+      const upper = pass([50.5, 150.5], [150.5, 150.5]);
+      const result = computeCoverageArea([lShape], [track(upper)]);
+      const expected = sphericalBoxArea(rect(0, 0, 200, 100)) + sphericalBoxArea(rect(0, 100, 100, 200));
+      expect(result.fields[0].areaM2).toBeCloseTo(expected, 4);
+      // Seule la moitié ouest du passage est dans la parcelle.
+      expectArea(result.totalAreaM2, 49.5 * 3 + stadium(0, 3) / 2);
+    });
+
+    it("mesure une parcelle éloignée sur la sphère, sans erreur de projection", () => {
+      const far = rect(3500, 3500, 3800, 3900);
+      const result = computeCoverageArea([FIELD, { outer: far, name: "loin" }], [track(PASS)]);
+      const exact = sphericalBoxArea(far);
+      expect(Math.abs(result.fields[1].areaM2 - exact) / exact).toBeLessThan(1e-9);
+    });
+
+    it("compte entièrement une parcelle éloignée entièrement travaillée", () => {
+      // La grille est projetée depuis le premier sommet du plan, à 5 km.
+      const points: LatLngPoint[] = [];
+      for (let k = 0; k < 20; k++) {
+        const y = 3501.5 + 3 * k;
+        const [from, to]: [number, number][] = k % 2 ? [[3570, y], [3490, y]] : [[3490, y], [3570, y]];
+        points.push(...pass(from, to, { startS: k * 42 }));
+      }
+      const far = { outer: rect(3500, 3500, 3560, 3560), name: "loin" };
+      const [, detail] = computeCoverageArea([FIELD, far], [track(points)]).fields;
+      expect(Math.abs(detail.coveredM2 / detail.areaM2 - 1)).toBeLessThan(0.002);
+    });
+  });
+
+  describe("passages réalistes", () => {
+    it("ne dépend pas de l'orientation du passage", () => {
+      // Angles quelconques : à 0°, 45° ou 90°, la grille de 1 m crée des
+      // effets de bord selon la position exacte de la ligne.
+      for (const degrees of [7, 23, 38, 52, 67, 81, 113, 158]) {
+        const angle = (degrees * Math.PI) / 180;
+        const [dx, dy] = [50 * Math.cos(angle), 50 * Math.sin(angle)];
+        const oblique = pass([100 - dx, 100 - dy], [100 + dx, 100 + dy]);
+        expectArea(area([FIELD], [track(oblique)]), stadium(100, 3));
+      }
+    });
+
+    it("suit une trajectoire courbe (cercle de 30 m de rayon)", () => {
+      const steps = Math.round((2 * Math.PI * 30) / 2);
+      const circle = Array.from({ length: steps + 1 }, (_, i) => {
+        const angle = (2 * Math.PI * i) / steps;
+        return at(100 + 30 * Math.cos(angle), 100 + 30 * Math.sin(angle), i);
+      });
+      expectArea(area([FIELD], [track(circle)]), 2 * Math.PI * 30 * 3);
+    });
+
+    it("compte une seule fois le recouvrement entre passages voisins", () => {
+      const points: LatLngPoint[] = [];
+      for (let k = 0; k < 24; k++) {
+        const y = 1.25 + 2.5 * k;
+        const [from, to]: [number, number][] = k % 2 ? [[60, y], [0, y]] : [[0, y], [60, y]];
+        points.push(...pass(from, to, { startS: k * 32 }));
+      }
+      expect(area([rect(0, 0, 60, 60)], [track(points)])).toBe(3600);
+    });
+
+    it("laisse des manques entre passages trop espacés", () => {
+      // Demi-tours hors de la parcelle : dedans, ils compteraient.
+      const points: LatLngPoint[] = [];
+      for (let k = 0; k < 15; k++) {
+        const y = 2.25 + 4 * k;
+        const [from, to]: [number, number][] = k % 2 ? [[70, y], [-10, y]] : [[-10, y], [70, y]];
+        points.push(...pass(from, to, { startS: k * 42 }));
+      }
+      expect(area([rect(0, 0, 60, 60)], [track(points)])).toBe(2700);
+    });
+
+    it("compte comme travaillés les demi-tours dans la parcelle (limite connue)", () => {
+      const points: LatLngPoint[] = [];
+      for (let k = 0; k < 15; k++) {
+        const y = 2.25 + 4 * k;
+        const [from, to]: [number, number][] = k % 2 ? [[60, y], [0, y]] : [[0, y], [60, y]];
+        points.push(...pass(from, to, { startS: k * 32 }));
+      }
+      expect(area([rect(0, 0, 60, 60)], [track(points)])).toBeGreaterThan(2700);
+    });
+
+    it("combine deux engins de largeurs différentes", () => {
+      // y = 100,25 : pas de centre de cellule en limite à 1,5 m ni à 3 m.
+      const line = (y: number) => pass([50, y], [150, y]);
+      const sameLine = [track(line(100.25), 3, "semoir"), track(line(100.25), 6, "pulvé")];
+      expectArea(area([FIELD], sameLine), stadium(100, 6));
+      const apart = [track(line(100.25), 3, "semoir"), track(line(120.25), 6, "pulvé")];
+      expectArea(area([FIELD], apart), stadium(100, 3) + stadium(100, 6));
     });
   });
 
