@@ -55,7 +55,7 @@ enum Peer {
 /// Version de l'app annoncée au handshake (`appVersion`, gps-sender ≥ 2.1.2),
 /// acceptée seulement si elle est courte et sans caractère douteux : elle
 /// finit telle quelle dans les journaux.
-fn app_version(value: Option<&Value>) -> Option<String> {
+pub(crate) fn app_version(value: Option<&Value>) -> Option<String> {
     let version = value?.as_str()?.trim();
     let valid = !version.is_empty()
         && version.len() <= 32

@@ -54,6 +54,7 @@ else
 fi
 
 docker tag "stelleros:$tree" "$target"
+mkdir -p "$project_dir/gps-sender"
 start
 echo "$(date -u +%FT%TZ) $tree $commit $origin" >>"$project_dir/deploiements.log"
 echo "$target = stelleros:$tree (commit $commit, image $origin)."

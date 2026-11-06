@@ -12,6 +12,7 @@ use crate::sencrop;
 use crate::state::AppState;
 
 pub mod gps;
+pub mod gps_update;
 pub mod phyto;
 
 /// Équivalent de `authMiddleware` : 401 sans session valide.

@@ -34,6 +34,10 @@ services:
       DB_DATABASE: ${MYSQL_DATABASE}
     ports:
       - "127.0.0.1:${APP_PORT}:4200"
+    # APK de GPS Sender publié par app/deploy/publie-gps-sender.sh (créé par
+    # deploie.sh : s'il manquait, Docker le créerait au nom de root).
+    volumes:
+      - ./gps-sender:/usr/src/app/gps-sender:ro
     networks: [site-net]
     logging:
       driver: "json-file"

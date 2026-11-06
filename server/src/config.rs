@@ -38,6 +38,8 @@ pub struct Config {
     pub gps_allowed_ids: Vec<String>,
     /// Durée de conservation de l'historique GPS en jours (`None` = illimitée).
     pub gps_retention_days: Option<u32>,
+    /// Dossier de publication de l'APK GPS Sender (`GPS_SENDER_DIR`).
+    pub gps_sender_dir: PathBuf,
     pub db: DbConfig,
     pub google_maps_api_key: Option<String>,
     /// Libellé affiché en bandeau par le client (« PRÉPROD »), absent en prod.
@@ -224,6 +226,9 @@ impl Config {
             gps_ingest_key: non_empty("GPS_INGEST_KEY"),
             gps_allowed_ids,
             gps_retention_days,
+            gps_sender_dir: PathBuf::from(
+                non_empty("GPS_SENDER_DIR").unwrap_or_else(|| "gps-sender".into()),
+            ),
             db,
             google_maps_api_key: env::var("GOOGLE_MAPS_API_KEY").ok(),
             env_label: non_empty("ENV_LABEL"),
