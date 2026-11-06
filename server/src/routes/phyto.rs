@@ -599,10 +599,21 @@ fn decimal_fr(value: &Value) -> String {
     js::to_js_string(Some(value)).replacen('.', ",", 1)
 }
 
-fn quoted_notes(notes: Option<String>) -> String {
-    match notes.filter(|n| !n.is_empty()) {
-        Some(notes) => format!("\"{}\"", notes.replace('"', "\"\"")),
-        None => String::new(),
+/// Cellule texte d'un export CSV (séparateur `;`). Une valeur commençant par
+/// `=`, `+`, `-`, `@`, une tabulation ou un retour chariot serait exécutée comme
+/// une formule par le tableur : elle est préfixée d'une apostrophe (OWASP,
+/// « CSV Injection »). Une valeur contenant `;`, `"` ou un saut de ligne est
+/// mise entre guillemets, sans quoi elle déborderait sur les cellules voisines.
+fn cellule_csv(value: &str) -> String {
+    let value = if value.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+        format!("'{value}")
+    } else {
+        value.to_string()
+    };
+    if value.contains([';', '"', '\n', '\r']) {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value
     }
 }
 
@@ -663,10 +674,12 @@ pub async fn export_applications(State(state): State<AppState>, headers: HeaderM
         let date: Option<NaiveDate> = row.try_get_unchecked("date").ok().flatten();
         let quantity: Option<f32> = row.try_get_unchecked("quantity_used").ok().flatten();
         let text = |name: &str| -> String {
-            row.try_get::<Option<String>, _>(name)
-                .ok()
-                .flatten()
-                .unwrap_or_default()
+            cellule_csv(
+                &row.try_get::<Option<String>, _>(name)
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default(),
+            )
         };
         lines.push(vec![
             date.map(|d| d.format("%d/%m/%Y").to_string())
@@ -677,7 +690,7 @@ pub async fn export_applications(State(state): State<AppState>, headers: HeaderM
                 .map(|q| decimal_fr(&q))
                 .unwrap_or_default(),
             text("product_unit"),
-            quoted_notes(row.try_get::<Option<String>, _>("notes").ok().flatten()),
+            text("notes"),
         ]);
     }
     csv_response(
@@ -705,10 +718,12 @@ pub async fn export_products(State(state): State<AppState>, headers: HeaderMap) 
     for row in &rows {
         let stock: Option<f32> = row.try_get_unchecked("stock").ok().flatten();
         let text = |name: &str| -> String {
-            row.try_get::<Option<String>, _>(name)
-                .ok()
-                .flatten()
-                .unwrap_or_default()
+            cellule_csv(
+                &row.try_get::<Option<String>, _>(name)
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default(),
+            )
         };
         let stock = float_value(stock)
             .filter(|s| js::truthy(Some(s)))
@@ -718,7 +733,7 @@ pub async fn export_products(State(state): State<AppState>, headers: HeaderMap) 
             text("category"),
             decimal_fr(&stock),
             text("unit"),
-            quoted_notes(row.try_get::<Option<String>, _>("notes").ok().flatten()),
+            text("notes"),
         ]);
     }
     csv_response(
@@ -726,4 +741,31 @@ pub async fn export_products(State(state): State<AppState>, headers: HeaderMap) 
         lines,
         "phyto_produits",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cellule_csv;
+
+    #[test]
+    fn cellule_csv_neutralise_les_formules() {
+        assert_eq!(cellule_csv("+33 6 12"), "'+33 6 12");
+        assert_eq!(cellule_csv("-2"), "'-2");
+        assert_eq!(cellule_csv("@SOMME(A1)"), "'@SOMME(A1)");
+        assert_eq!(cellule_csv("\tx"), "'\tx");
+        assert_eq!(
+            cellule_csv("=HYPERLINK(\"http://x\")"),
+            "\"'=HYPERLINK(\"\"http://x\"\")\""
+        );
+        // Une formule placée après un séparateur reste dans la même cellule.
+        assert_eq!(cellule_csv("a;=1+1"), "\"a;=1+1\"");
+    }
+
+    #[test]
+    fn cellule_csv_guillemets_seulement_si_necessaire() {
+        assert_eq!(cellule_csv(""), "");
+        assert_eq!(cellule_csv("Bouillie bordelaise"), "Bouillie bordelaise");
+        assert_eq!(cellule_csv("dit \"bio\""), "\"dit \"\"bio\"\"\"");
+        assert_eq!(cellule_csv("ligne 1\nligne 2"), "\"ligne 1\nligne 2\"");
+    }
 }

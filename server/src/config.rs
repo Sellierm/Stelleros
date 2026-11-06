@@ -163,8 +163,11 @@ impl Config {
             &non_empty("CORS_ORIGINS")
                 .unwrap_or_else(|| "http://localhost:5173,http://localhost:4200".into()),
         );
+        // Suffixe d'hôte accepté en plus de CORS_ORIGINS (ex. « .example.net »).
+        // Aucun par défaut : avec un domaine d'hébergement mutualisé, n'importe
+        // quel site hébergé chez le même prestataire passerait le contrôle CORS.
         let cors_allowed_suffix = non_empty("CORS_ALLOWED_SUFFIX")
-            .unwrap_or_else(|| ".alwaysdata.net".into())
+            .unwrap_or_default()
             .trim()
             .to_string();
 
@@ -286,11 +289,28 @@ pub fn url_hostname(url: &url::Url) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_map_module;
+    use super::{Config, parse_map_module};
 
     #[test]
     fn map_module_table() {
         let src = "\u{feff}module.exports = {\n  key: process.env.K,\n  table: [\n    \"https://a/1\",\n    'https://a/2',\n  ],\n};\n";
         assert_eq!(parse_map_module(src), vec!["https://a/1", "https://a/2"]);
+    }
+
+    #[test]
+    fn cors_sans_suffixe_par_defaut() {
+        let mut cfg = Config::from_env().expect("config");
+        if std::env::var_os("CORS_ALLOWED_SUFFIX").is_none() {
+            assert_eq!(cfg.cors_allowed_suffix, "");
+        }
+        cfg.allowed_origins = vec!["https://ferme.example".into()];
+        cfg.cors_allowed_suffix = String::new();
+        assert!(cfg.is_origin_allowed(Some("https://ferme.example"), "api.example"));
+        assert!(cfg.is_origin_allowed(Some("https://api.example"), "api.example:4200"));
+        assert!(!cfg.is_origin_allowed(Some("https://pirate.alwaysdata.net"), "api.example"));
+
+        cfg.cors_allowed_suffix = ".example.net".into();
+        assert!(cfg.is_origin_allowed(Some("https://app.example.net"), "api.example"));
+        assert!(!cfg.is_origin_allowed(Some("https://app.example.net.pirate.io"), "api.example"));
     }
 }

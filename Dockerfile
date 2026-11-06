@@ -31,11 +31,20 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates tzdata \
     && rm -rf /var/lib/apt/lists/*
 
+# Le serveur tourne sans privilèges, sous un UID qu'aucun compte de l'hôte
+# n'utilise (server = 1000, membre du groupe docker). Il n'écrit rien sur
+# disque : les fichiers de l'image restent à root, et le volume gps-sender,
+# monté en lecture seule, est lisible par tous.
+RUN groupadd --gid 10001 stelleros \
+    && useradd --uid 10001 --gid stelleros --no-create-home \
+        --home-dir /nonexistent --shell /usr/sbin/nologin stelleros
+
 WORKDIR /usr/src/app
 
 COPY --from=build /usr/src/app/target/release/farm-server ./farm-server
 COPY --from=build /usr/src/app/modules ./modules
 COPY --from=client /usr/src/client/dist ../client/dist
 
-EXPOSE 3000
+EXPOSE 4200
+USER 10001:10001
 CMD ["./farm-server"]

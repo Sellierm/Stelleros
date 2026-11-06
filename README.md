@@ -55,6 +55,7 @@ Set the values in `server/.env`:
 | `NODE_ENV` | Runtime environment, normally `development` or `production` |
 | `PORT`, `IP` | API listening port and address |
 | `CORS_ORIGINS` | Comma-separated allowed frontend origins |
+| `CORS_ALLOWED_SUFFIX` | Optional host suffix also allowed by CORS, starting with a dot (e.g. `.example.net`); none by default |
 | `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_DATABASE` | MariaDB/MySQL connection |
 | `BETTER_AUTH_SECRET` | Long random secret signing session cookies (required in production) |
 | `BETTER_AUTH_URL` | Public URL of the application |
