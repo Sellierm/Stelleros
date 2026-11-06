@@ -20,6 +20,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::routing::{any, get, post, put};
 use socketioxide::SocketIo;
+use tower_http::compression::predicate::{DefaultPredicate, NotForContentType, Predicate};
 
 use crate::config::Config;
 use crate::state::{AppState, Inner};
@@ -59,6 +60,14 @@ fn build_router(state: AppState, socket_layer: socketioxide::layer::SocketIoLaye
             middleware::location_limit,
         ));
 
+    let gps_update = Router::new()
+        .route("/api/gps-sender/version", get(routes::gps_update::version))
+        .route("/api/gps-sender/apk", get(routes::gps_update::apk))
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            middleware::gps_update_limit,
+        ));
+
     Router::new()
         .route("/api/auth/{*rest}", any(auth::handler))
         .route("/api/config", get(routes::get_config))
@@ -71,12 +80,19 @@ fn build_router(state: AppState, socket_layer: socketioxide::layer::SocketIoLaye
         )
         .route("/api/positions-dates", get(routes::gps::positions_dates))
         .merge(location)
+        .merge(gps_update)
         .merge(phyto)
         .fallback(routes::fallback)
         .method_not_allowed_fallback(routes::fallback)
         .with_state(state.clone())
         // Sous la couche Socket.IO : seules les réponses HTTP sont compressées.
-        .layer(tower_http::compression::CompressionLayer::new())
+        .layer(
+            tower_http::compression::CompressionLayer::new().compress_when(
+                DefaultPredicate::new().and(NotForContentType::const_new(
+                    routes::gps_update::APK_CONTENT_TYPE,
+                )),
+            ),
+        )
         .layer(socket_layer)
         .layer(axum::middleware::from_fn_with_state(
             state,

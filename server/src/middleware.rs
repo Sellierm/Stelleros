@@ -216,6 +216,10 @@ pub async fn location_limit(State(state): State<AppState>, req: Request, next: N
     limit_with(&state.limiters.location, &state, req, next).await
 }
 
+pub async fn gps_update_limit(State(state): State<AppState>, req: Request, next: Next) -> Response {
+    limit_with(&state.limiters.gps_update, &state, req, next).await
+}
+
 pub async fn phyto_limit(State(state): State<AppState>, req: Request, next: Next) -> Response {
     limit_with(&state.limiters.phyto, &state, req, next).await
 }

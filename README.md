@@ -64,6 +64,7 @@ Set the values in `server/.env`:
 | `GPS_INGEST_KEY` | Shared key for GPS devices |
 | `GPS_ALLOWED_IDS` | Comma-separated authorized GPS device IDs |
 | `GPS_RETENTION_DAYS` | Optional: GPS history kept for this many days (unset or `0` = forever) |
+| `GPS_SENDER_DIR` | Optional: directory of the published gps-sender APK (default `gps-sender`, mounted from the project's `gps-sender/`) |
 | `GOOGLE_MAPS_API_KEY` | Google Maps JavaScript API key |
 | `OPENWEATHER_API_KEY` | OpenWeather API key |
 | `FORECAST_LATITUDE`, `FORECAST_LONGITUDE`, `FORECAST_CITY` | Forecast location |
@@ -300,6 +301,34 @@ POST /api/location
 
 The sender and this API must share the configured GPS ingestion key and
 authorized device IDs.
+
+### Automatic updates of the tablets
+
+The app (≥ 2.3.0) checks every 6 hours, and on demand from its main screen,
+for a newer version published on this server:
+
+```text
+GET /api/gps-sender/version   → { versionCode, versionName, sha256, size }
+GET /api/gps-sender/apk       → the APK
+```
+
+Both require `X-Device-Id` (one of `GPS_ALLOWED_IDS`) and
+`Authorization: Bearer <GPS_INGEST_KEY>`. Downloads are logged
+(`docker logs site-site-app-1 2>&1 | grep 'GPS Sender'`).
+
+A version is published by the project's `gps-sender/` directory (mounted
+read-only in `site-app`), written by:
+
+```bash
+deploy/publie-gps-sender.sh 2.3.0              # signed APK of the GitHub release 2.3.0
+deploy/publie-gps-sender.sh ~/app-release.apk  # or an APK built in Android Studio
+deploy/publie-gps-sender.sh --etat             # currently published version
+```
+
+The script checks the package name, the signature, that the `versionCode` is
+higher than the published one and that the signing certificate is unchanged
+(`--force` skips the last two checks). Publishing takes effect immediately; the
+script from `~/stacks/site-preprod/app` publishes to pre-production.
 
 ### GPS history
 

@@ -19,6 +19,7 @@ compose() { (cd "$project_dir" && docker compose "$@"); }
 # Compose ne recrée pas site-app quand seule la cible de l'étiquette change :
 # on compare l'image du conteneur à celle voulue.
 start() {
+  mkdir -p "$project_dir/gps-sender" # monté dans site-app (voir deploie.sh)
   compose up -d
   local running wanted
   running=$(docker inspect --format '{{.Image}}' "$(compose ps -q site-app)")
