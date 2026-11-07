@@ -477,13 +477,28 @@ impl AuthRateLimiter {
     }
 }
 
+/// Adresse comptée par le limiteur : l'IPv4 telle quelle, le bloc /64 d'une
+/// IPv6. Un accès internet dispose d'un /64 entier : en comptant par adresse,
+/// il suffirait d'en changer à chaque essai pour repartir à zéro.
+fn rate_limit_ip(ip: &str) -> String {
+    match ip.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V6(v6)) => {
+            let s = v6.segments();
+            format!("{:x}:{:x}:{:x}:{:x}::/64", s[0], s[1], s[2], s[3])
+        }
+        _ => ip.to_string(),
+    }
+}
+
 fn rate_limit(state: &AppState, headers: &HeaderMap, path: &str) -> Result<(), Response> {
     let (window, max) = if path == "/sign-in/username" {
         (600, 10)
     } else {
         (600, 60)
     };
-    let ip = auth_ip(state, headers).unwrap_or_else(|| "no-trusted-ip".into());
+    let ip = auth_ip(state, headers)
+        .map(|ip| rate_limit_ip(&ip))
+        .unwrap_or_else(|| "no-trusted-ip".into());
     let key = format!("{ip}|{path}");
     match state
         .limiters
@@ -1011,5 +1026,40 @@ mod tests {
         let id = generate_id();
         assert_eq!(id.len(), 32);
         assert!(id.bytes().all(|b| b.is_ascii_alphanumeric()));
+    }
+
+    #[test]
+    fn limiteur_compte_les_ipv6_par_bloc_64() {
+        assert_eq!(rate_limit_ip("203.0.113.7"), "203.0.113.7");
+        assert_eq!(rate_limit_ip("no-trusted-ip"), "no-trusted-ip");
+        // Forme produite par normalize_ip (8 groupes complets).
+        let a = rate_limit_ip(&normalize_ip("2a01:cb0c:78b:2b00:2e0:4cff:fe4b:b01f"));
+        let b = rate_limit_ip(&normalize_ip("2a01:cb0c:78b:2b00::1"));
+        let autre = rate_limit_ip(&normalize_ip("2a01:cb0c:78b:2b01::1"));
+        assert_eq!(a, "2a01:cb0c:78b:2b00::/64");
+        assert_eq!(a, b);
+        assert_ne!(a, autre);
+        // Une IPv4 encapsulée reste comptée comme IPv4.
+        assert_eq!(
+            rate_limit_ip(&normalize_ip("::ffff:203.0.113.7")),
+            "203.0.113.7"
+        );
+    }
+
+    #[test]
+    fn changer_d_adresse_dans_le_64_ne_remet_pas_a_zero() {
+        let limiter = AuthRateLimiter::default();
+        let accepte = |adresse: &str| {
+            let ip = rate_limit_ip(&normalize_ip(adresse));
+            let key = format!("{ip}|/sign-in/username");
+            limiter
+                .consume(&key, Duration::from_secs(600), 10)
+                .is_none()
+        };
+        for i in 1..=10 {
+            assert!(accepte(&format!("2a01:db8:1:2::{i:x}")));
+        }
+        assert!(!accepte("2a01:db8:1:2::ffff"));
+        assert!(accepte("2a01:db8:1:3::1"));
     }
 }

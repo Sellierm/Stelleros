@@ -1,0 +1,13 @@
+# Mises à jour des actions GitHub, épinglées par SHA dans les workflows :
+# Dependabot propose une PR par mois regroupant les nouvelles versions.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci

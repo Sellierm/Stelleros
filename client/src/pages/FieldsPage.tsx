@@ -17,6 +17,7 @@ import type {
   FieldRings,
   LatLngPoint,
 } from "../utils/coverageCalculator";
+import { buildInfoWindowContent } from "../utils/gpsInfoWindow";
 import { fieldInfoLines, parseKmlPlan } from "../utils/kmlPlan";
 import "./FieldsPage.css";
 
@@ -490,27 +491,6 @@ export default function FieldsPage() {
         console.error("Error loading GPS history:", err);
       }
     }
-  };
-
-  const buildInfoWindowContent = (deviceId: string, pos: GpsPoint) => {
-    const speedKmh = pos.speed != null ? (pos.speed * 3.6).toFixed(1) : null;
-    const headingStr =
-      pos.heading != null ? `${Number(pos.heading).toFixed(0)}°` : null;
-    const sourceStr = pos.source || "unknown";
-    const accuracyStr =
-      pos.accuracy != null ? `${Number(pos.accuracy).toFixed(2)}m` : null;
-
-    return `
-      <div class="tractor-info-window">
-        <strong>Device ID:</strong> ${deviceId}<br/>
-        <strong>Position:</strong> ${pos.latitude.toFixed(6)}, ${pos.longitude.toFixed(6)}<br/>
-        ${pos.altitude != null ? `<strong>Altitude:</strong> ${Number(pos.altitude).toFixed(1)}m<br/>` : ""}
-        ${accuracyStr ? `<strong>Précision:</strong> ${accuracyStr}<br/>` : ""}
-        ${speedKmh ? `<strong>Vitesse:</strong> ${speedKmh} km/h<br/>` : ""}
-        ${headingStr ? `<strong>Cap:</strong> ${headingStr}<br/>` : ""}
-        <strong>Source:</strong> ${sourceStr}<br/>
-        <strong>Mise à jour:</strong> ${new Date(pos.timestamp).toLocaleString("fr-FR")}
-      </div>`;
   };
 
   const createMarker = (

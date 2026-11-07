@@ -13,23 +13,36 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Actions épinglées par SHA de commit : un tag peut être déplacé vers
+      # un autre code, un SHA non. Dependabot propose les mises à jour.
       - name: Connect to Tailscale
-        uses: tailscale/github-action@v2
+        uses: tailscale/github-action@4e4c49acaa9818630ce0bd7a564372c17e33fb4d # v2
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
 
+      # ssh du runner plutôt qu'une action tierce : la clé de déploiement ne
+      # passe par aucun code extérieur, et la clé du serveur est vérifiée
+      # (clé publique ED25519 ci-dessous, à remplacer si le serveur est
+      # réinstallé).
+      # Arrêt à la première erreur ; --ff-only refuse tout commit de fusion
+      # si le dossier de prod n'est pas sur main ou a divergé.
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: 22
-          # Arrêt à la première erreur ; --ff-only refuse tout commit de fusion
-          # si le dossier de prod n'est pas sur main ou a divergé.
-          script: |
-            set -eu
-            cd ~/stacks/site/app
-            test "$(git branch --show-current)" = main
-            git pull -q --ff-only origin main
-            deploy/deploie.sh
+        timeout-minutes: 20
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploiement
+          chmod 600 ~/.ssh/deploiement
+          echo "serveur ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPzmXXs+FxgRBCciykz9TNeW0gGQi2kz/OuNBmq8Q6H0" > ~/.ssh/known_hosts_serveur
+          ssh -i ~/.ssh/deploiement -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o HostKeyAlias=serveur \
+            -o UserKnownHostsFile=~/.ssh/known_hosts_serveur -o UpdateHostKeys=no \
+            -o ServerAliveInterval=30 \
+            "$SSH_USER@$SSH_HOST" 'set -eu
+          cd ~/stacks/site/app
+          test "$(git branch --show-current)" = main
+          git pull -q --ff-only origin main
+          deploy/deploie.sh'

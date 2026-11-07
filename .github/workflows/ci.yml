@@ -24,14 +24,14 @@ jobs:
         working-directory: server
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # Même version que l'image de build (Dockerfile).
-      - uses: dtolnay/rust-toolchain@1.99
+      - uses: dtolnay/rust-toolchain@d124f86f28ff42855784ff3319f48ac182c248f8 # 1.99
         with:
           components: rustfmt, clippy
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: server
 
@@ -52,9 +52,9 @@ jobs:
         working-directory: client
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -71,11 +71,15 @@ jobs:
 
   # Déploie la PR sur https://sellier-test.duckdns.org une fois les
   # vérifications passées. Branches du dépôt uniquement : une PR venant d'un
-  # fork n'a pas accès aux secrets et n'exécute rien sur le serveur.
+  # fork n'a pas accès aux secrets et n'exécute rien sur le serveur. Les PR de
+  # Dependabot non plus : elles changent justement les actions qui reçoivent
+  # les secrets, et se vérifient en relisant le changement avant la fusion.
   preprod:
     name: Déploiement préprod
     needs: [server, client]
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository
+      && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     # Une seule préprod : les déploiements de PR différentes passent l'un
     # après l'autre, le dernier l'emporte.
@@ -85,22 +89,35 @@ jobs:
 
     steps:
       - name: Connect to Tailscale
-        uses: tailscale/github-action@v2
+        uses: tailscale/github-action@4e4c49acaa9818630ce0bd7a564372c17e33fb4d # v2
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
 
-      # Seuls le numéro de PR et le SHA (valeurs sûres) sont injectés dans le
-      # script, jamais le nom de branche.
+      # ssh du runner plutôt qu'une action tierce : la clé de déploiement ne
+      # passe par aucun code extérieur, et la clé du serveur est vérifiée
+      # (clé publique ED25519 ci-dessous, à remplacer si le serveur est
+      # réinstallé). Seuls le numéro de PR et le SHA, contrôlés avant usage,
+      # sont transmis au script, jamais le nom de branche.
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: 22
-          script: |
-            set -eu
-            cd ~/stacks/site-preprod/app
-            git fetch -q origin "refs/pull/${{ github.event.pull_request.number }}/head"
-            git checkout -q --detach "${{ github.event.pull_request.head.sha }}"
-            deploy/deploie.sh
+        timeout-minutes: 20
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          [[ $PR_NUMBER =~ ^[0-9]+$ && $PR_SHA =~ ^[0-9a-f]{40}$ ]]
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploiement
+          chmod 600 ~/.ssh/deploiement
+          echo "serveur ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPzmXXs+FxgRBCciykz9TNeW0gGQi2kz/OuNBmq8Q6H0" > ~/.ssh/known_hosts_serveur
+          ssh -i ~/.ssh/deploiement -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o HostKeyAlias=serveur \
+            -o UserKnownHostsFile=~/.ssh/known_hosts_serveur -o UpdateHostKeys=no \
+            -o ServerAliveInterval=30 \
+            "$SSH_USER@$SSH_HOST" "set -eu
+          cd ~/stacks/site-preprod/app
+          git fetch -q origin refs/pull/$PR_NUMBER/head
+          git checkout -q --detach $PR_SHA
+          deploy/deploie.sh"
