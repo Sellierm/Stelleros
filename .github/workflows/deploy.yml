@@ -16,7 +16,7 @@ jobs:
       # Actions épinglées par SHA de commit : un tag peut être déplacé vers
       # un autre code, un SHA non. Dependabot propose les mises à jour.
       - name: Connect to Tailscale
-        uses: tailscale/github-action@4e4c49acaa9818630ce0bd7a564372c17e33fb4d # v2
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
 
