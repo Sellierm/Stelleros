@@ -1,5 +1,7 @@
 -- Tables d'authentification (schéma Better Auth, plugin username).
--- Le serveur Rust lit et écrit ces tables ; il ne les crée pas.
+-- Existantes en production : créées seulement si absentes.
+-- Remplace l'ancien script manuel server/schema/auth.sql.
+
 CREATE TABLE IF NOT EXISTS auth_user (
   id varchar(36) NOT NULL,
   name varchar(255) NOT NULL,

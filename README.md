@@ -21,7 +21,6 @@ server/src/routes/      API routes (phyto, GPS, config, forecast, SPA)
 server/src/socket.rs    Socket.IO events (web clients and GPS devices)
 server/src/track.rs     GPS history: daily compaction and track simplification
 server/migrations/      Versioned SQL migrations (applied at startup)
-server/schema/auth.sql  Authentication tables
 Dockerfile              Production image definition
 ```
 
@@ -124,24 +123,18 @@ The Rust API implements the Better Auth endpoints used by the client
 refreshed every 5 minutes, 24 hours without "remember me") and the same
 database tables. Sessions created by the former Node server remain valid.
 
-Create the authentication tables if they do not exist yet:
+The whole database schema is created by the versioned migrations in
+`server/migrations/`, applied automatically when the server starts:
 
-```bash
-mysql -u <user> -p <database> < server/schema/auth.sql
-```
+- authentication: `auth_user`, `auth_session`, `auth_account`,
+  `auth_verification`;
+- plant protection: `phyto_products`, `phyto_applications`,
+  `phyto_application_products`;
+- GPS: `gps_track`, `gps_latest`, `gps_days`, `gps_compaction`.
 
-The script creates:
-
-- `auth_user`;
-- `auth_session`;
-- `auth_account`;
-- `auth_verification`.
-
-Verify the result:
-
-```sql
-SHOW TABLES LIKE 'auth_%';
-```
+Every migration uses `IF NOT EXISTS`, so it is safe on an existing database:
+tables already present are left untouched. Applied migrations are recorded in
+the `_sqlx_migrations` table.
 
 Public sign-up is disabled. Existing users from the legacy `user` table must
 be copied to Better Auth after the schema migration. Back up the database and
