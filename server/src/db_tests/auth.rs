@@ -111,16 +111,19 @@ async fn connexion_session_deconnexion(pool: MySqlPool) {
 async fn connexion_mauvais_mot_de_passe(pool: MySqlPool) {
     let app = TestApp::new(pool);
     app.create_user().await;
-    for (username, password) in [(TEST_USERNAME, "faux"), ("inconnu", "faux")] {
+    for (cas, username) in [
+        ("mauvais mot de passe", TEST_USERNAME),
+        ("compte inconnu", "inconnu"),
+    ] {
         let res = app
             .request(
                 Method::POST,
                 "/api/auth/sign-in/username",
                 None,
-                Some(json!({ "username": username, "password": password })),
+                Some(json!({ "username": username, "password": "faux" })),
             )
             .await;
-        assert_eq!(res.status, StatusCode::UNAUTHORIZED, "{username}");
+        assert_eq!(res.status, StatusCode::UNAUTHORIZED, "{cas}");
         assert!(res.headers.get("set-cookie").is_none());
     }
     let sessions: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM auth_session")
