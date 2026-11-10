@@ -115,6 +115,20 @@ Run the server checks with:
 cd server && cargo test && cargo clippy --all-targets
 ```
 
+`cargo test` alone skips the integration tests in `server/src/db_tests/`
+(phyto stock, GPS ingestion, history and compaction, authentication,
+migrations). They need a MariaDB server whose account may create databases:
+each test gets a fresh database with every migration applied. With Docker:
+
+```bash
+docker run -d --rm --name stelleros-test-db -p 33306:3306 \
+  -e MARIADB_ROOT_PASSWORD=test -e MARIADB_DATABASE=farm mariadb:11
+cd server
+DATABASE_URL=mysql://root:test@127.0.0.1:33306/farm cargo test -- --include-ignored
+```
+
+The CI runs them on every pull request.
+
 ## Authentication and database migration
 
 The Rust API implements the Better Auth endpoints used by the client

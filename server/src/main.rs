@@ -5,6 +5,8 @@
 mod auth;
 mod config;
 mod db;
+#[cfg(test)]
+mod db_tests;
 mod js;
 mod location;
 mod middleware;
