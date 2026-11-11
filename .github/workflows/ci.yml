@@ -23,6 +23,22 @@ jobs:
       run:
         working-directory: server
 
+    # Base des tests d'intégration (src/db_tests) : même moteur qu'en prod.
+    # Chaque test y crée sa propre base et y applique les migrations.
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: test
+          MARIADB_DATABASE: farm
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -41,8 +57,10 @@ jobs:
       - name: Clippy
         run: cargo clippy --locked --all-targets -- -D warnings
 
-      - name: Tests
-        run: cargo test --locked
+      - name: Tests (unitaires et sur base)
+        run: cargo test --locked -- --include-ignored
+        env:
+          DATABASE_URL: mysql://root:test@127.0.0.1:3306/farm
 
   client:
     name: Client (React)

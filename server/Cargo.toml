@@ -32,6 +32,13 @@ tower = "0.5"
 tower-http = { version = "0.7", features = ["fs", "compression-gzip"] }
 url = "2"
 
+# bcrypt (coût 12) est très lent sans optimisation : connexion en dev et tests.
+[profile.dev.package.bcrypt]
+opt-level = 3
+
+[profile.dev.package.blowfish]
+opt-level = 3
+
 [profile.release]
 lto = true
 codegen-units = 1
