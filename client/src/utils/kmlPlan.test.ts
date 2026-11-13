@@ -296,6 +296,7 @@ describe("plan KML et calcul de couverture", () => {
     ]);
     const [detail] = result.fields;
     expect(detail.name).toBe("12 · Blé");
+    expect(detail.fieldIds).toEqual([plan.fields[0].index]);
     expect(detail.areaM2 / 10000).toBeCloseTo(plan.fields[0].surfaceHa, 9);
     expect(plan.fields[0].surfaceHa).toBeCloseTo(10, 2);
     expect(

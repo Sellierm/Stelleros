@@ -155,7 +155,12 @@ export function parseKmlPlan(kmlText: string): FarmPlan {
         ? `${field.name} · ${field.culture}`
         : field.name;
     for (const { outer, holes } of field.polygons) {
-      fieldPolygons.push({ outer, holes, name: fieldName || undefined });
+      fieldPolygons.push({
+        outer,
+        holes,
+        name: fieldName || undefined,
+        fieldId: field.index,
+      });
     }
   }
 
