@@ -19,6 +19,7 @@ import type {
 } from "../utils/coverageCalculator";
 import { buildInfoWindowContent } from "../utils/gpsInfoWindow";
 import { fieldInfoLines, parseKmlPlan } from "../utils/kmlPlan";
+import type { PlanField } from "../utils/kmlPlan";
 import "./FieldsPage.css";
 
 type LatLngLiteral = google.maps.LatLngLiteral;
@@ -89,19 +90,26 @@ const FIELD_STYLES = {
 
 interface FieldSelection {
   crop: string | null;
-  // Indice du Placemark dans le plan KML (tous ses polygones ensemble).
-  fieldId: number | null;
+  // Indices des Placemark dans le plan KML (tous leurs polygones ensemble) :
+  // une parcelle cliquée sur la carte, ou les contours regroupés d'une ligne
+  // du détail de couverture. Vide si aucune parcelle n'est sélectionnée.
+  fieldIds: number[];
 }
+
+const sameFieldIds = (a: number[], b: number[]) =>
+  a.length === b.length && a.every((id) => b.includes(id));
 
 const getFieldOverlayStyle = (
   fieldId: number,
   culture: string,
   selection: FieldSelection,
 ) => {
-  const { crop, fieldId: selectedId } = selection;
+  const { crop, fieldIds: selectedIds } = selection;
   let level: keyof typeof FIELD_STYLES = "other";
-  if (crop === null && selectedId === null) level = "none";
-  else if (selectedId !== null ? fieldId === selectedId : culture === crop) {
+  if (crop === null && selectedIds.length === 0) level = "none";
+  else if (
+    selectedIds.length > 0 ? selectedIds.includes(fieldId) : culture === crop
+  ) {
     level = "selected";
   } else if (crop !== null && culture === crop) level = "sameCrop";
   return { strokeOpacity: 1, ...FIELD_STYLES[level] };
@@ -130,7 +138,7 @@ export default function FieldsPage() {
   const [totalHa, setTotalHa] = useState<string | null>(null);
   const [cropTotals, setCropTotals] = useState<Record<string, number>>({});
   const [selectedCrop, setSelectedCrop] = useState<string | null>(null);
-  const [selectedFieldId, setSelectedFieldId] = useState<number | null>(null);
+  const [selectedFieldIds, setSelectedFieldIds] = useState<number[]>([]);
   const [gpsPositions, setGpsPositions] = useState<Record<string, GpsPoint>>(
     {},
   );
@@ -164,6 +172,7 @@ export default function FieldsPage() {
     {},
   );
   const fieldPolygonsRef = useRef<FieldRings[]>([]);
+  const planFieldsRef = useRef<PlanField[]>([]);
   const fieldOverlaysRef = useRef<
     { overlay: google.maps.Polygon; culture: string; fieldId: number }[]
   >([]);
@@ -174,16 +183,16 @@ export default function FieldsPage() {
 
   const selectionRef = useRef<FieldSelection>({
     crop: selectedCrop,
-    fieldId: selectedFieldId,
+    fieldIds: selectedFieldIds,
   });
 
   useEffect(() => {
-    const selection = { crop: selectedCrop, fieldId: selectedFieldId };
+    const selection = { crop: selectedCrop, fieldIds: selectedFieldIds };
     selectionRef.current = selection;
     fieldOverlaysRef.current.forEach(({ overlay, culture, fieldId }) => {
       overlay.setOptions(getFieldOverlayStyle(fieldId, culture, selection));
     });
-  }, [selectedCrop, selectedFieldId]);
+  }, [selectedCrop, selectedFieldIds]);
 
   usePageMeta("Fields", "/assets/icons8-champ-32.png");
 
@@ -650,8 +659,9 @@ export default function FieldsPage() {
           );
           fieldOverlaysRef.current = [];
           // Les indices de parcelle changent avec le plan.
-          selectionRef.current = { ...selectionRef.current, fieldId: null };
-          setSelectedFieldId(null);
+          selectionRef.current = { ...selectionRef.current, fieldIds: [] };
+          setSelectedFieldIds([]);
+          planFieldsRef.current = fields;
 
           for (const field of fields) {
             const { index: i, culture: cultureName } = field;
@@ -666,15 +676,11 @@ export default function FieldsPage() {
               });
               overlay.addListener("click", () => {
                 // Second clic sur la parcelle sélectionnée : désélection.
-                if (selectionRef.current.fieldId === i) {
-                  setSelectedFieldId(null);
-                  setSelectedCrop(null);
-                  setMapInfo(["", ""]);
+                if (sameFieldIds(selectionRef.current.fieldIds, [i])) {
+                  clearFieldSelection();
                   return;
                 }
-                setMapInfo(fieldInfoLines(field));
-                setSelectedFieldId(i);
-                setSelectedCrop(cultureName !== "N/A" ? cultureName : null);
+                selectFields([i]);
               });
               fieldOverlaysRef.current.push({
                 overlay,
@@ -829,6 +835,52 @@ export default function FieldsPage() {
     } satisfies CoverageWorkerRequest);
   };
 
+  const clearFieldSelection = () => {
+    setSelectedFieldIds([]);
+    setSelectedCrop(null);
+    setMapInfo(["", ""]);
+  };
+
+  // Met en avant des parcelles du plan (même rendu qu'un clic sur la carte) ;
+  // la première donne les infos affichées et la culture.
+  const selectFields = (fieldIds: number[]) => {
+    const field = planFieldsRef.current.find(
+      ({ index }) => index === fieldIds[0],
+    );
+    if (!field) return;
+    setMapInfo(fieldInfoLines(field));
+    setSelectedFieldIds(fieldIds);
+    setSelectedCrop(field.culture !== "N/A" ? field.culture : null);
+  };
+
+  // Clic sur une ligne du détail de couverture : met la parcelle en avant et
+  // déplace la carte si elle n'est pas entièrement visible.
+  const toggleCoveredField = (fieldIds: number[]) => {
+    if (fieldIds.length === 0) return;
+    if (sameFieldIds(selectionRef.current.fieldIds, fieldIds)) {
+      clearFieldSelection();
+      return;
+    }
+    selectFields(fieldIds);
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    const bounds = new google.maps.LatLngBounds();
+    fieldOverlaysRef.current.forEach(({ overlay, fieldId }) => {
+      if (!fieldIds.includes(fieldId)) return;
+      overlay
+        .getPath()
+        .forEach((point: google.maps.LatLng) => bounds.extend(point));
+    });
+    if (bounds.isEmpty()) return;
+    const visible = map.getBounds();
+    if (
+      !visible?.contains(bounds.getNorthEast()) ||
+      !visible.contains(bounds.getSouthWest())
+    ) {
+      map.panToBounds(bounds);
+    }
+  };
+
   const coveredFields = (coverageResult?.fields ?? []).filter(
     (field) => field.coveredM2 >= MIN_LISTED_COVERAGE_M2,
   );
@@ -857,7 +909,7 @@ export default function FieldsPage() {
                   name === "Pdt" ? () => setShowPdtInfo(false) : undefined
                 }
                 onClick={() => {
-                  setSelectedFieldId(null);
+                  setSelectedFieldIds([]);
                   setSelectedCrop((prev) => (prev === name ? null : name));
                 }}
                 style={{
@@ -1028,20 +1080,43 @@ export default function FieldsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {coveredFields.map(({ name, areaM2, coveredM2 }) => (
-                      <tr key={name}>
-                        <td>{name}</td>
-                        <td>{(coveredM2 / 10000).toFixed(2)}</td>
-                        <td>
-                          {areaM2 > 0
-                            ? Math.min(
-                                100,
-                                Math.round((100 * coveredM2) / areaM2),
-                              )
-                            : "–"}
-                        </td>
-                      </tr>
-                    ))}
+                    {coveredFields.map(
+                      ({ name, areaM2, coveredM2, fieldIds }) => (
+                        <tr
+                          key={name}
+                          className={
+                            fieldIds.some((id) => selectedFieldIds.includes(id))
+                              ? "selected"
+                              : undefined
+                          }
+                          tabIndex={fieldIds.length > 0 ? 0 : undefined}
+                          title={
+                            fieldIds.length > 0
+                              ? "Mettre la parcelle en avant sur la carte"
+                              : undefined
+                          }
+                          onClick={() => toggleCoveredField(fieldIds)}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter" && event.key !== " ") {
+                              return;
+                            }
+                            event.preventDefault();
+                            toggleCoveredField(fieldIds);
+                          }}
+                        >
+                          <td>{name}</td>
+                          <td>{(coveredM2 / 10000).toFixed(2)}</td>
+                          <td>
+                            {areaM2 > 0
+                              ? Math.min(
+                                  100,
+                                  Math.round((100 * coveredM2) / areaM2),
+                                )
+                              : "–"}
+                          </td>
+                        </tr>
+                      ),
+                    )}
                   </tbody>
                 </table>
               )}

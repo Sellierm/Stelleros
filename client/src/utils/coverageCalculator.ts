@@ -15,6 +15,8 @@ export interface FieldRings {
   // Nom de la parcelle dans le détail du résultat (contours de même nom
   // regroupés).
   name?: string;
+  // Identifiant de la parcelle du plan (sélection sur la carte).
+  fieldId?: number;
 }
 
 // Contour simple [{lat, lng}, ...] ou { outer, holes }.
@@ -32,6 +34,8 @@ export interface FieldCoverage {
   // Surface du contour, enclaves déduites.
   areaM2: number;
   coveredM2: number;
+  // Identifiants des parcelles du plan regroupées sous ce nom.
+  fieldIds: number[];
 }
 
 export interface CoverageResult {
@@ -61,6 +65,7 @@ interface PointM {
 
 interface FieldM {
   name: string;
+  fieldId: number | undefined;
   areaM2: number;
   outer: PointM[];
   holes: PointM[][];
@@ -265,13 +270,15 @@ function computeFieldCoverage(
 function toFieldRings(fieldPolygon: FieldPolygon) {
   // Accepte un contour simple [{lat, lng}, ...] ou { outer, holes, name }.
   if (Array.isArray(fieldPolygon)) {
-    return { outer: fieldPolygon, holes: [], name: undefined };
+    return { outer: fieldPolygon, holes: [], name: undefined, fieldId: undefined };
   }
   return {
     outer: fieldPolygon?.outer,
     holes: Array.isArray(fieldPolygon?.holes) ? fieldPolygon.holes : [],
     name:
       typeof fieldPolygon?.name === "string" ? fieldPolygon.name : undefined,
+    fieldId:
+      typeof fieldPolygon?.fieldId === "number" ? fieldPolygon.fieldId : undefined,
   };
 }
 
@@ -305,7 +312,7 @@ export function computeCoverageArea(
     t: point.t,
   });
 
-  const fields = rawFields.map(({ outer, holes, name, index }): FieldM => {
+  const fields = rawFields.map(({ outer, holes, name, fieldId, index }): FieldM => {
     const validHoles = holes.filter(
       (hole) => Array.isArray(hole) && hole.length >= 3,
     );
@@ -323,6 +330,7 @@ export function computeCoverageArea(
     }
     return {
       name: name?.trim() || `Contour ${index + 1}`,
+      fieldId,
       // Même mesure que la surface des parcelles du plan (kmlPlan.ts).
       areaM2: polygonAreaM2(outer, validHoles),
       outer: outerM,
@@ -380,7 +388,7 @@ export function computeCoverageArea(
   let totalAreaM2 = 0;
   const byName = new Map<string, FieldCoverage>();
   for (let i = 0; i < fields.length; i++) {
-    const { name, areaM2 } = fields[i];
+    const { name, areaM2, fieldId } = fields[i];
     const coveredM2 = computeFieldCoverage(
       fields[i],
       fields.slice(0, i),
@@ -388,12 +396,16 @@ export function computeCoverageArea(
       cellSizeM,
     );
     totalAreaM2 += coveredM2;
-    const entry = byName.get(name);
+    let entry = byName.get(name);
     if (entry) {
       entry.areaM2 += areaM2;
       entry.coveredM2 += coveredM2;
     } else {
-      byName.set(name, { name, areaM2, coveredM2 });
+      entry = { name, areaM2, coveredM2, fieldIds: [] };
+      byName.set(name, entry);
+    }
+    if (fieldId !== undefined && !entry.fieldIds.includes(fieldId)) {
+      entry.fieldIds.push(fieldId);
     }
   }
 

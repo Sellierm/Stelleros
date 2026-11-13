@@ -383,6 +383,27 @@ html.dark-theme .fields-layout-toggle:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.coverage-fields tbody tr[tabindex] {
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+
+.coverage-fields tbody tr[tabindex]:hover,
+.coverage-fields tbody tr:focus-visible {
+  background: rgba(30, 143, 114, 0.1);
+  outline: none;
+}
+
+.coverage-fields tbody tr.selected {
+  background: rgba(30, 143, 114, 0.18);
+  font-weight: 600;
+}
+
+.coverage-fields tbody tr.selected td:first-child {
+  box-shadow: inset 3px 0 0 var(--fields-accent);
+  padding-left: 6px;
+}
+
 .fields-page .pp-btn,
 .device-btn {
   border: 0;

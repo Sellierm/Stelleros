@@ -39,7 +39,12 @@ describe("computeCoverageArea", () => {
     expect(result.devicesUsed).toEqual(["tracteur"]);
     expect(result.warnings).toEqual([]);
     expect(result.fields).toEqual([
-      { name: "Contour 1", areaM2: expect.closeTo(sphericalBoxArea(FIELD), 4), coveredM2: result.totalAreaM2 },
+      {
+        name: "Contour 1",
+        areaM2: expect.closeTo(sphericalBoxArea(FIELD), 4),
+        coveredM2: result.totalAreaM2,
+        fieldIds: [],
+      },
     ]);
   });
 
@@ -168,13 +173,18 @@ describe("computeCoverageArea", () => {
 
     it("regroupe les contours d'une même parcelle", () => {
       const fields = [
-        { outer: rect(0, 0, 100, 200), name: "P" },
-        { outer: rect(100, 0, 200, 200), name: "P" },
+        { outer: rect(0, 0, 100, 200), name: "P", fieldId: 3 },
+        { outer: rect(100, 0, 200, 200), name: "P", fieldId: 7 },
+        { outer: rect(0, 200, 100, 300), name: "P", fieldId: 3 },
       ];
       const result = computeCoverageArea(fields, [track(PASS)]);
-      expect(result.fieldsProcessed).toBe(2);
+      expect(result.fieldsProcessed).toBe(3);
       expect(result.fields).toHaveLength(1);
-      expect(result.fields[0].areaM2).toBeCloseTo(sphericalBoxArea(FIELD), 4);
+      expect(result.fields[0].fieldIds).toEqual([3, 7]);
+      expect(result.fields[0].areaM2).toBeCloseTo(
+        sphericalBoxArea(FIELD) + sphericalBoxArea(rect(0, 200, 100, 300)),
+        4,
+      );
       expect(result.fields[0].coveredM2).toBe(result.totalAreaM2);
     });
 
