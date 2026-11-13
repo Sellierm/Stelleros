@@ -322,7 +322,7 @@ pub fn query_values(query: Option<&str>, name: &str) -> Vec<String> {
 
 // ── En-têtes helmet + CORS + cache + CSRF ─────────────────────────────────
 
-const CSP: &str = "default-src 'self';script-src 'self' maps.googleapis.com maps.gstatic.com;style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://use.fontawesome.com https://www.google.com/maps/d https://api.sencrop.com/v1;img-src 'self' data: blob: *.googleapis.com *.gstatic.com *.google.com https://openweathermap.org;connect-src 'self' *.googleapis.com wss: ws: https://www.google.com https://api.sencrop.com;font-src 'self' fonts.gstatic.com https://use.fontawesome.com;frame-src 'none';object-src 'none';worker-src blob:;base-uri 'self';form-action 'self';frame-ancestors 'self';script-src-attr 'none';upgrade-insecure-requests";
+const CSP: &str = "default-src 'self';script-src 'self' maps.googleapis.com maps.gstatic.com;style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://use.fontawesome.com https://www.google.com/maps/d https://api.sencrop.com/v1;img-src 'self' data: blob: *.googleapis.com *.gstatic.com *.google.com https://openweathermap.org;connect-src 'self' *.googleapis.com wss: ws: https://www.google.com https://api.sencrop.com;font-src 'self' fonts.gstatic.com https://use.fontawesome.com;frame-src 'none';object-src 'none';worker-src 'self' blob:;base-uri 'self';form-action 'self';frame-ancestors 'self';script-src-attr 'none';upgrade-insecure-requests";
 
 const HELMET_HEADERS: [(&str, &str); 12] = [
     ("content-security-policy", CSP),
