@@ -9,6 +9,7 @@ The application provides:
 - OpenWeather and Sencrop weather data;
 - GPS position ingestion and machine position history;
 - plant-protection product stock and application tracking;
+- work-hours timesheet per user, exported as an Excel sheet;
 - Better Auth username/password authentication.
 
 ## Project structure
@@ -17,7 +18,7 @@ The application provides:
 client/                 React/Vite frontend (TypeScript)
 server/                 Rust API and Socket.IO server
 server/src/auth.rs      Better Auth compatible authentication endpoints
-server/src/routes/      API routes (phyto, GPS, config, forecast, SPA)
+server/src/routes/      API routes (phyto, timesheet, GPS, config, forecast, SPA)
 server/src/socket.rs    Socket.IO events (web clients and GPS devices)
 server/src/track.rs     GPS history: daily compaction and track simplification
 server/migrations/      Versioned SQL migrations (applied at startup)
@@ -144,7 +145,8 @@ The whole database schema is created by the versioned migrations in
   `auth_verification`;
 - plant protection: `phyto_products`, `phyto_applications`,
   `phyto_application_products`;
-- GPS: `gps_track`, `gps_latest`, `gps_days`, `gps_compaction`.
+- GPS: `gps_track`, `gps_latest`, `gps_days`, `gps_compaction`;
+- timesheet: `timesheet_entries`.
 
 Every migration uses `IF NOT EXISTS`, so it is safe on an existing database:
 tables already present are left untouched. Applied migrations are recorded in
@@ -221,6 +223,30 @@ The Phyto API uses the following relationships:
 Create or maintain these tables using the database schema for the deployment
 environment. Do not use the obsolete schema in which
 `phyto_applications` contains a single `product_id` column.
+
+## Timesheet
+
+The **Pointage** page (`/timesheet`) records working hours: one day per user
+and date, split into a morning and an afternoon (start, end, work done). Each
+user creates and edits only their own days; any signed-in user can view and
+export another user's days (read-only).
+
+```text
+GET    /api/timesheet/users                       → { me, users: [{ id, name }] }
+GET    /api/timesheet/entries?user=&from=&to=     → days of a user (default: me)
+POST   /api/timesheet/entries                     → new day (409 if the date exists)
+PUT    /api/timesheet/entries/{id}                → own days only (403 otherwise)
+DELETE /api/timesheet/entries/{id}
+GET    /api/timesheet/export?user=&from=&to=      → .xlsx
+```
+
+Dates are `YYYY-MM-DD`, times `HH:MM`; a half-day has both times or none, its
+end after its start, and the morning must end before the afternoon starts.
+
+The Excel export keeps the usual sheet layout (Date, Matin début/fin, Total
+Matin, Travaux effectués, Après-midi début/fin, Total apm, Travaux effectués,
+Nbre h/jour) with a two-row merged header and a final total row. Totals are
+Excel formulas in `[h]:mm`, so correcting a time in Excel updates them.
 
 ## Maps and weather configuration
 

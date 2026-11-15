@@ -88,6 +88,42 @@ export interface ApplicationPayload {
   products: { product_id: number; quantity_used: number | null }[];
 }
 
+// ─── Pointage des heures (timesheet_entries) ───────────────────
+
+export interface TimesheetUser {
+  id: string;
+  name: string;
+}
+
+export interface TimesheetUsersResponse {
+  me: string;
+  users: TimesheetUser[];
+}
+
+// Heures « HH:MM » ; une demi-journée non travaillée a ses heures à null.
+export interface TimesheetEntry {
+  id: number;
+  user_id: string;
+  date: string;
+  morning_start: string | null;
+  morning_end: string | null;
+  morning_tasks: string | null;
+  afternoon_start: string | null;
+  afternoon_end: string | null;
+  afternoon_tasks: string | null;
+}
+
+// Formulaire de saisie : chaînes vides pour les champs non renseignés.
+export interface TimesheetPayload {
+  date: string;
+  morning_start: string;
+  morning_end: string;
+  morning_tasks: string;
+  afternoon_start: string;
+  afternoon_end: string;
+  afternoon_tasks: string;
+}
+
 // ─── Prévisions (OpenWeatherMap One Call, `{}` en cas d'erreur) ─
 
 export interface WeatherCondition {

@@ -15,6 +15,7 @@
 mod auth;
 mod gps;
 mod phyto;
+mod timesheet;
 
 use std::sync::Arc;
 

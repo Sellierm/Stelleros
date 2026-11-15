@@ -14,6 +14,7 @@ use crate::state::AppState;
 pub mod gps;
 pub mod gps_update;
 pub mod phyto;
+pub mod timesheet;
 
 /// Équivalent de `authMiddleware` : 401 sans session valide.
 pub async fn require_user(state: &AppState, headers: &HeaderMap) -> Result<AuthUser, Response> {

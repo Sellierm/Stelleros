@@ -15,6 +15,8 @@ pub struct Limiters {
     /// Positions GPS par device (socket + HTTP) : 10 Hz max (+ marge).
     pub device: RateLimiter,
     pub phyto: RateLimiter,
+    /// Pointage des heures (saisie, consultation, export).
+    pub timesheet: RateLimiter,
     /// Vérification et téléchargement des mises à jour de GPS Sender.
     pub gps_update: RateLimiter,
     pub spa: RateLimiter,
@@ -56,6 +58,11 @@ impl Inner {
                 phyto: RateLimiter::new(
                     Duration::from_secs(15 * 60),
                     100,
+                    "Too many requests from this IP, please try again later.",
+                ),
+                timesheet: RateLimiter::new(
+                    Duration::from_secs(15 * 60),
+                    300,
                     "Too many requests from this IP, please try again later.",
                 ),
                 // Une tablette vérifie quelques fois par jour ; la marge

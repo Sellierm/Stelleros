@@ -64,6 +64,7 @@ export default function Nav() {
     "/fields": "Fields",
     "/gps": "Gps",
     "/phyto": "Phyto",
+    "/timesheet": "Pointage",
   };
   const currentName = pageNames[location.pathname] || "Farm";
 
@@ -104,6 +105,11 @@ export default function Nav() {
           <li>
             <NavLink className={linkClass} to="/phyto">
               Phyto
+            </NavLink>
+          </li>
+          <li>
+            <NavLink className={linkClass} to="/timesheet">
+              Pointage
             </NavLink>
           </li>
         </ul>
