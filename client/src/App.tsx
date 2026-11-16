@@ -8,6 +8,7 @@ import SencropPage from "./pages/SencropPage";
 import FieldsPage from "./pages/FieldsPage";
 import GpsPage from "./pages/GpsPage";
 import PhytoPage from "./pages/PhytoPage";
+import TimesheetPage from "./pages/TimesheetPage";
 
 export default function App() {
   const homePage = import.meta.env.DEV ? (
@@ -59,6 +60,14 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <PhytoPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/timesheet"
+              element={
+                <ProtectedRoute>
+                  <TimesheetPage />
                 </ProtectedRoute>
               }
             />

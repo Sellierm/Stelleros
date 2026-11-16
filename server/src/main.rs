@@ -55,6 +55,25 @@ fn build_router(state: AppState, socket_layer: socketioxide::layer::SocketIoLaye
             middleware::phyto_limit,
         ));
 
+    let timesheet = Router::new()
+        .route("/api/timesheet/users", get(routes::timesheet::list_users))
+        .route(
+            "/api/timesheet/entries",
+            get(routes::timesheet::list_entries).post(routes::timesheet::create_entry),
+        )
+        .route(
+            "/api/timesheet/entries/{id}",
+            put(routes::timesheet::update_entry).delete(routes::timesheet::delete_entry),
+        )
+        .route(
+            "/api/timesheet/export",
+            get(routes::timesheet::export_entries),
+        )
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            middleware::timesheet_limit,
+        ));
+
     let location = Router::new()
         .route("/api/location", post(routes::gps::post_location))
         .route_layer(axum::middleware::from_fn_with_state(
@@ -84,6 +103,7 @@ fn build_router(state: AppState, socket_layer: socketioxide::layer::SocketIoLaye
         .merge(location)
         .merge(gps_update)
         .merge(phyto)
+        .merge(timesheet)
         .fallback(routes::fallback)
         .method_not_allowed_fallback(routes::fallback)
         .with_state(state.clone())

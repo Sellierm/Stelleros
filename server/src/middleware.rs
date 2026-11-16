@@ -224,6 +224,10 @@ pub async fn phyto_limit(State(state): State<AppState>, req: Request, next: Next
     limit_with(&state.limiters.phyto, &state, req, next).await
 }
 
+pub async fn timesheet_limit(State(state): State<AppState>, req: Request, next: Next) -> Response {
+    limit_with(&state.limiters.timesheet, &state, req, next).await
+}
+
 // ── Corps de requête (express.json + express.urlencoded) ──────────────────
 
 const BODY_LIMIT: usize = 100 * 1024;

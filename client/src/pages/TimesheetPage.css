@@ -1,0 +1,425 @@
+.ts-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(1480px, 100%);
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 18px clamp(14px, 3vw, 40px) 24px;
+}
+
+/* ── Résumé ───────────────────────────────────────────────────────────── */
+
+.ts-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ts-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px;
+  border: 1px solid var(--app-border);
+  border-radius: 16px;
+  background: var(--app-panel);
+  box-shadow: var(--app-shadow-soft);
+}
+
+.ts-summary-card strong {
+  color: var(--app-ink);
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* ── Panneaux ─────────────────────────────────────────────────────────── */
+
+.ts-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.ts-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ts-panel-form {
+  position: sticky;
+  top: 14px;
+}
+
+.ts-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--app-line);
+}
+
+.ts-panel-header h2 {
+  margin: 0;
+  color: var(--app-ink);
+  font-size: 17px;
+  letter-spacing: -0.02em;
+}
+
+.ts-subtitle {
+  color: var(--app-muted);
+  font-size: 12px;
+}
+
+.ts-empty {
+  padding: 24px;
+  color: var(--app-muted);
+  font-size: 13px;
+}
+
+.ts-link {
+  padding: 0;
+  border: 0;
+  color: var(--app-accent);
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.ts-error {
+  padding: 9px 12px;
+  border-radius: 11px;
+  color: var(--app-danger);
+  background: rgba(181, 68, 58, 0.1);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ts-error-panel {
+  margin: 12px 16px 0;
+}
+
+/* ── Formulaire ───────────────────────────────────────────────────────── */
+
+.ts-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 18px 18px;
+}
+
+.ts-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ts-form label > span {
+  color: var(--app-accent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.ts-form textarea {
+  resize: vertical;
+  font-weight: 500;
+}
+
+.ts-half {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--app-line);
+  border-radius: 14px;
+  background: var(--app-panel-soft);
+}
+
+.ts-half legend {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 0 6px;
+  color: var(--app-ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ts-half-total {
+  color: var(--app-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ts-times {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.ts-times label {
+  flex: 1 1 0;
+}
+
+.ts-clear {
+  flex-shrink: 0;
+  height: 38px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  color: var(--app-muted);
+  background: var(--app-accent-soft);
+  cursor: pointer;
+}
+
+.ts-clear:hover {
+  color: var(--app-danger);
+  background: rgba(181, 68, 58, 0.12);
+}
+
+.ts-form-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--app-accent-soft);
+  font-size: 13px;
+}
+
+.ts-form-total strong {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ts-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* ── Filtres ──────────────────────────────────────────────────────────── */
+
+.ts-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 16px 2px;
+}
+
+.timesheet-page .ts-select {
+  flex: 0 1 200px;
+  width: auto;
+  min-width: 140px;
+  cursor: pointer;
+}
+
+.ts-range {
+  display: flex;
+  flex: 1 1 300px;
+  gap: 8px;
+  align-items: center;
+  color: var(--app-muted);
+}
+
+.ts-range .app-input {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* ── Tableau ──────────────────────────────────────────────────────────── */
+
+.ts-table-wrap {
+  padding: 12px 14px 14px;
+  overflow-x: auto;
+}
+
+.ts-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ts-table th {
+  padding: 6px 8px;
+  color: var(--app-accent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ts-table thead tr:first-child th[colspan] {
+  border-bottom: 1px solid var(--app-line);
+  text-align: center;
+}
+
+.ts-table td {
+  padding: 9px 8px;
+  border-top: 1px solid var(--app-line);
+  color: var(--app-ink);
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.ts-table tbody tr:hover {
+  background: var(--app-accent-soft);
+}
+
+.ts-table .ts-row-active {
+  background: var(--app-accent-soft);
+  box-shadow: inset 3px 0 0 var(--app-accent);
+}
+
+.ts-cell-date {
+  font-weight: 700;
+}
+
+.ts-table .ts-tasks {
+  min-width: 140px;
+  max-width: 280px;
+  color: var(--app-muted);
+  white-space: normal;
+}
+
+.ts-num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.ts-day-total {
+  font-weight: 800;
+}
+
+.ts-table tfoot td {
+  border-top: 2px solid var(--app-line);
+  font-weight: 800;
+}
+
+.ts-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.ts-icon-btn {
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--app-ink);
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ts-icon-btn:hover {
+  background: var(--app-accent-soft);
+}
+
+.ts-icon-btn-danger {
+  color: var(--app-danger);
+}
+
+.ts-icon-btn-danger:hover {
+  background: rgba(181, 68, 58, 0.14);
+}
+
+/* ── Mobile : formulaire puis cartes ──────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .ts-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ts-panel-form {
+    position: static;
+  }
+}
+
+@media (max-width: 640px) {
+  .ts-summary-grid {
+    gap: 8px;
+  }
+
+  .ts-summary-card {
+    padding: 10px 12px;
+  }
+
+  .ts-summary-card strong {
+    font-size: 19px;
+  }
+
+  .ts-table thead {
+    display: none;
+  }
+
+  .ts-table,
+  .ts-table tbody,
+  .ts-table tr,
+  .ts-table td {
+    display: block;
+  }
+
+  .ts-table tbody tr {
+    position: relative;
+    margin-bottom: 8px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: var(--app-panel-soft);
+  }
+
+  .ts-table td {
+    padding: 2px 0;
+    border: 0;
+    white-space: normal;
+  }
+
+  .ts-table td[data-label]::before {
+    content: attr(data-label) " : ";
+    color: var(--app-muted);
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .ts-table td:empty {
+    display: none;
+  }
+
+  .ts-num {
+    text-align: left;
+  }
+
+  .ts-table .ts-tasks {
+    max-width: none;
+  }
+
+  .ts-actions {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+  }
+
+  .ts-table tfoot tr {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 12px;
+  }
+
+  .ts-table tfoot td {
+    border: 0;
+  }
+}
