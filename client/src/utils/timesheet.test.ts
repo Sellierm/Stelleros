@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   dayMinutes,
   emptyPayload,
+  endsNextDay,
   formatDayLabel,
   formatDuration,
   halfDayMinutes,
@@ -52,6 +53,41 @@ describe("durées", () => {
     expect(formatDuration(210)).toBe("3:30");
     expect(formatDuration(12 * 60)).toBe("12:00");
     expect(formatDuration(87 * 60 + 5)).toBe("87:05");
+  });
+});
+
+describe("après-midi après minuit", () => {
+  it("compte la fin le lendemain, jusqu'à 6 h", () => {
+    const entry = {
+      morning_start: "09:00",
+      morning_end: "12:00",
+      afternoon_start: "22:00",
+      afternoon_end: "03:00",
+    };
+    expect(endsNextDay("22:00", "03:00")).toBe(true);
+    expect(dayMinutes(entry)).toBe(3 * 60 + 5 * 60);
+    expect(halfDayMinutes("19:00", "06:00", true)).toBe(11 * 60);
+    expect(halfDayMinutes("14:00", "13:00", true)).toBe(0);
+    // Le matin ne passe pas minuit.
+    expect(halfDayMinutes("22:00", "03:00")).toBe(0);
+  });
+
+  it("valide comme le serveur", () => {
+    expect(
+      validatePayload(
+        payload({ afternoon_start: "22:00", afternoon_end: "03:00" }),
+      ),
+    ).toBeNull();
+    expect(
+      validatePayload(
+        payload({ afternoon_start: "14:00", afternoon_end: "13:00" }),
+      ),
+    ).toMatch(/lendemain/);
+    expect(
+      validatePayload(
+        payload({ morning_start: "23:00", morning_end: "02:00" }),
+      ),
+    ).toMatch(/^Matin/);
   });
 });
 

@@ -64,6 +64,7 @@ Set the values in `server/.env`:
 | `CLIENT_DIST` | Optional path to the React build (default `../client/dist`) |
 | `GPS_INGEST_KEY` | Shared key for GPS devices |
 | `GPS_ALLOWED_IDS` | Comma-separated authorized GPS device IDs |
+| `TIMESHEET_USERS` | Optional: usernames with a work-hours timesheet, comma-separated (unset: every account) |
 | `GPS_RETENTION_DAYS` | Optional: GPS history kept for this many days (unset or `0` = forever) |
 | `GPS_SENDER_DIR` | Optional: directory of the published gps-sender APK (default `gps-sender`, mounted from the project's `gps-sender/`) |
 | `GOOGLE_MAPS_API_KEY` | Google Maps JavaScript API key |
@@ -227,12 +228,14 @@ environment. Do not use the obsolete schema in which
 ## Timesheet
 
 The **Pointage** page (`/timesheet`) records working hours: one day per user
-and date, split into a morning and an afternoon (start, end, work done). Each
-user creates and edits only their own days; any signed-in user can view and
-export another user's days (read-only).
+and date, split into a morning and an afternoon (start, end, work done). Only
+the accounts listed in `TIMESHEET_USERS` (every account when unset) have a
+timesheet; each of them
+creates and edits only their own days. Every signed-in user can view and
+export those timesheets (read-only).
 
 ```text
-GET    /api/timesheet/users                       → { me, users: [{ id, name }] }
+GET    /api/timesheet/users                       → { me, canEdit, users: [{ id, name }] }
 GET    /api/timesheet/entries?user=&from=&to=     → days of a user (default: me)
 POST   /api/timesheet/entries                     → new day (409 if the date exists)
 PUT    /api/timesheet/entries/{id}                → own days only (403 otherwise)
@@ -242,6 +245,8 @@ GET    /api/timesheet/export?user=&from=&to=      → .xlsx
 
 Dates are `YYYY-MM-DD`, times `HH:MM`; a half-day has both times or none, its
 end after its start, and the morning must end before the afternoon starts.
+The afternoon may run past midnight (harvest, night ploughing): an end time
+earlier than the start, up to 06:00, falls on the next day.
 
 The Excel export keeps the usual sheet layout (Date, Matin début/fin, Total
 Matin, Travaux effectués, Après-midi début/fin, Total apm, Travaux effectués,

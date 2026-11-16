@@ -43,6 +43,10 @@
   align-items: start;
 }
 
+.ts-layout-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .ts-panel {
   display: flex;
   flex-direction: column;
