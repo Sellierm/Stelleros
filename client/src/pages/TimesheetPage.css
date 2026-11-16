@@ -175,6 +175,27 @@
   flex: 1 1 0;
 }
 
+/* Case « x2 » : heures de la demi-journée comptées double. */
+.ts-times .ts-double {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  align-items: center;
+  height: 38px;
+  color: var(--app-ink);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ts-double input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--app-accent);
+  cursor: pointer;
+}
+
 .ts-clear {
   flex-shrink: 0;
   height: 38px;

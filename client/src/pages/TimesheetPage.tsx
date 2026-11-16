@@ -84,7 +84,7 @@ interface HalfDayFieldsProps {
   prefix: "morning" | "afternoon";
   form: TimesheetPayload;
   minutes: number;
-  onChange: (key: keyof TimesheetPayload, value: string) => void;
+  onChange: (key: keyof TimesheetPayload, value: string | boolean) => void;
 }
 
 function HalfDayFields({
@@ -97,11 +97,14 @@ function HalfDayFields({
   const start = `${prefix}_start` as const;
   const end = `${prefix}_end` as const;
   const tasks = `${prefix}_tasks` as const;
+  const double = `${prefix}_double` as const;
   const set =
     (key: keyof TimesheetPayload) =>
     (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       onChange(key, e.target.value);
-  const hasValue = Boolean(form[start] || form[end] || form[tasks]);
+  const hasValue = Boolean(
+    form[start] || form[end] || form[tasks] || form[double],
+  );
   const nextDay = prefix === "afternoon" && endsNextDay(form[start], form[end]);
 
   return (
@@ -110,6 +113,7 @@ function HalfDayFields({
         <span>{label}</span>
         <span className="ts-half-total">
           {formatDuration(minutes)}
+          {form[double] && " (x2)"}
           {nextDay && " · fin le lendemain"}
         </span>
       </legend>
@@ -134,6 +138,17 @@ function HalfDayFields({
             onChange={set(end)}
           />
         </label>
+        <label
+          className="ts-double"
+          title="Les heures de la demi-journée comptent double"
+        >
+          <input
+            type="checkbox"
+            checked={form[double]}
+            onChange={(e) => onChange(double, e.target.checked)}
+          />
+          <span>x2</span>
+        </label>
         {hasValue && (
           <button
             type="button"
@@ -143,6 +158,7 @@ function HalfDayFields({
               onChange(start, "");
               onChange(end, "");
               onChange(tasks, "");
+              onChange(double, false);
             }}
           >
             ✕
@@ -184,7 +200,7 @@ function EntryForm({
   );
   const [localError, setLocalError] = useState("");
 
-  const onChange = (key: keyof TimesheetPayload, value: string) => {
+  const onChange = (key: keyof TimesheetPayload, value: string | boolean) => {
     setForm((prev) => ({ ...prev, [key]: value }));
     setLocalError("");
   };
@@ -617,6 +633,7 @@ export default function TimesheetPage() {
                           </td>
                           <td data-label="Durée" className="ts-num">
                             {morning ? formatDuration(morning) : ""}
+                            {morning && entry.morning_double ? " (x2)" : ""}
                           </td>
                           <td data-label="Travaux" className="ts-tasks">
                             {entry.morning_tasks}
@@ -635,6 +652,7 @@ export default function TimesheetPage() {
                           </td>
                           <td data-label="Durée" className="ts-num">
                             {afternoon ? formatDuration(afternoon) : ""}
+                            {afternoon && entry.afternoon_double ? " (x2)" : ""}
                           </td>
                           <td data-label="Travaux" className="ts-tasks">
                             {entry.afternoon_tasks}
