@@ -1,9 +1,13 @@
 //! Pointage des heures de travail.
 //!
 //! Une journée par utilisateur et par date, en deux demi-journées (matin,
-//! après-midi) avec leurs horaires et les travaux effectués. Chacun saisit et
-//! modifie ses propres journées ; tout utilisateur connecté peut consulter et
-//! exporter celles des autres (export Excel au format de la feuille d'heures).
+//! après-midi) avec leurs horaires et les travaux effectués. Seuls les
+//! utilisateurs listés dans `TIMESHEET_USERS` (tous si la liste est vide) ont
+//! un pointage : chacun saisit et modifie ses propres journées. Tout utilisateur connecté peut consulter
+//! et exporter leurs journées (export Excel au format de la feuille d'heures).
+//!
+//! L'après-midi peut se terminer après minuit (moisson, labour de nuit) : une
+//! heure de fin antérieure au début, jusqu'à 6 h, compte pour le lendemain.
 
 use axum::body::Body;
 use axum::extract::{Path, State};
@@ -24,9 +28,13 @@ pub const XLSX_CONTENT_TYPE: &str =
 /// Longueur maximale d'un descriptif de travaux (caractères).
 const MAX_TASKS_LEN: usize = 1000;
 
+/// Dernière heure de fin acceptée pour un après-midi qui passe minuit.
+const OVERNIGHT_MAX_END_SECS: u32 = 6 * 3600;
+
 // ── Modèle ────────────────────────────────────────────────────────────────
 
-/// Demi-journée travaillée : fin strictement après le début.
+/// Demi-journée travaillée. Une fin antérieure au début (après-midi
+/// seulement, validé à la saisie) tombe le lendemain.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HalfDay {
     pub start: NaiveTime,
@@ -36,7 +44,12 @@ pub struct HalfDay {
 
 impl HalfDay {
     fn minutes(&self) -> i64 {
-        (self.end - self.start).num_minutes()
+        let minutes = (self.end - self.start).num_minutes();
+        if minutes < 0 {
+            minutes + 24 * 60
+        } else {
+            minutes
+        }
     }
 }
 
@@ -136,6 +149,7 @@ fn validate_half(
     start: &Option<String>,
     end: &Option<String>,
     tasks: &Option<String>,
+    overnight: bool,
 ) -> Result<Option<HalfDay>, String> {
     let tasks = non_empty(tasks).map(str::to_string);
     if tasks
@@ -156,7 +170,17 @@ fn validate_half(
             Err(format!("{label} : indiquez les heures de début et de fin"))
         }
         (None, None) => Ok(None),
-        (Some(start), Some(end)) if end > start => Ok(Some(HalfDay { start, end, tasks })),
+        (Some(start), Some(end))
+            if end > start
+                || (overnight
+                    && end < start
+                    && end.num_seconds_from_midnight() <= OVERNIGHT_MAX_END_SECS) =>
+        {
+            Ok(Some(HalfDay { start, end, tasks }))
+        }
+        (Some(_), Some(_)) if overnight => Err(format!(
+            "{label} : l'heure de fin doit être après l'heure de début (ou au plus tard 6:00 le lendemain)"
+        )),
         (Some(_), Some(_)) => Err(format!(
             "{label} : l'heure de fin doit être après l'heure de début"
         )),
@@ -173,12 +197,14 @@ pub fn validate(input: &EntryInput) -> Result<Day, String> {
         &input.morning_start,
         &input.morning_end,
         &input.morning_tasks,
+        false,
     )?;
     let afternoon = validate_half(
         "Après-midi",
         &input.afternoon_start,
         &input.afternoon_end,
         &input.afternoon_tasks,
+        true,
     )?;
     if morning.is_none() && afternoon.is_none() {
         return Err("Renseignez au moins une demi-journée".into());
@@ -250,15 +276,78 @@ async fn fetch_entries(state: &AppState, q: &Query) -> Result<Vec<EntryRow>, sql
     .await
 }
 
-/// Nom affiché d'un utilisateur : `displayUsername`, sinon `username`, sinon `name`.
-async fn user_label(state: &AppState, user_id: &str) -> Result<Option<String>, sqlx::Error> {
-    sqlx::query_scalar(
-        "SELECT COALESCE(NULLIF(displayUsername, ''), NULLIF(username, ''), name)
-         FROM auth_user WHERE id = ?",
-    )
+/// Nom affiché : `displayUsername`, sinon `username`, sinon `name`.
+const LABEL: &str = "COALESCE(NULLIF(displayUsername, ''), NULLIF(username, ''), name)";
+
+/// Le compte a-t-il un pointage (`TIMESHEET_USERS`, tous si vide) ?
+fn is_worker(state: &AppState, username: Option<&str>) -> bool {
+    let names = &state.cfg.timesheet_users;
+    names.is_empty()
+        || username.is_some_and(|name| names.iter().any(|w| w.eq_ignore_ascii_case(name)))
+}
+
+/// Comptes ayant un pointage : `(id, nom affiché)`, triés par nom.
+async fn workers(state: &AppState) -> Result<Vec<(String, String)>, sqlx::Error> {
+    let names = &state.cfg.timesheet_users;
+    if names.is_empty() {
+        return sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT id, {LABEL} AS label FROM auth_user ORDER BY label ASC"
+        )))
+        .fetch_all(&state.pool)
+        .await;
+    }
+    let sql = format!(
+        "SELECT id, {LABEL} AS label FROM auth_user
+         WHERE LOWER(username) IN ({}) ORDER BY label ASC",
+        vec!["?"; names.len()].join(", ")
+    );
+    // SQL dynamique audité : uniquement des `?` (valeurs liées par bind).
+    let mut query = sqlx::query_as(sqlx::AssertSqlSafe(sql));
+    for name in names {
+        query = query.bind(name);
+    }
+    query.fetch_all(&state.pool).await
+}
+
+/// Nom affiché du compte s'il a un pointage, `None` sinon (ou inconnu).
+async fn worker_label(state: &AppState, user_id: &str) -> Result<Option<String>, sqlx::Error> {
+    let row: Option<(Option<String>, String)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "SELECT username, {LABEL} FROM auth_user WHERE id = ?"
+    )))
     .bind(user_id)
     .fetch_optional(&state.pool)
-    .await
+    .await?;
+    Ok(row
+        .filter(|(username, _)| is_worker(state, username.as_deref()))
+        .map(|(_, label)| label))
+}
+
+/// Journées d'un compte sans pointage : 404, comme un compte inconnu.
+async fn require_worker(state: &AppState, user_id: &str) -> Result<String, Response> {
+    match worker_label(state, user_id).await {
+        Ok(Some(label)) => Ok(label),
+        Ok(None) => Err(fail(
+            StatusCode::NOT_FOUND,
+            "Pas de pointage pour cet utilisateur",
+        )),
+        Err(err) => Err(server_error(
+            err,
+            "Erreur lecture utilisateur",
+            "Erreur de lecture",
+        )),
+    }
+}
+
+/// Saisie et modification : réservées aux comptes ayant un pointage.
+fn require_own_timesheet(state: &AppState, me: &crate::auth::AuthUser) -> Result<(), Response> {
+    if is_worker(state, me.username.as_deref()) {
+        Ok(())
+    } else {
+        Err(fail(
+            StatusCode::FORBIDDEN,
+            "Ce compte n'a pas de pointage des heures",
+        ))
+    }
 }
 
 fn server_error(err: sqlx::Error, label: &str, message: &str) -> Response {
@@ -268,23 +357,19 @@ fn server_error(err: sqlx::Error, label: &str, message: &str) -> Response {
 
 // ── Handlers ──────────────────────────────────────────────────────────────
 
-/// `GET /api/timesheet/users` : utilisateur connecté et liste des utilisateurs.
+/// `GET /api/timesheet/users` : utilisateur connecté, s'il peut saisir ses
+/// heures, et comptes ayant un pointage.
 pub async fn list_users(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let me = match require_user(&state, &headers).await {
         Ok(user) => user,
         Err(res) => return res,
     };
-    let rows: Result<Vec<(String, String)>, _> = sqlx::query_as(
-        "SELECT id, COALESCE(NULLIF(displayUsername, ''), NULLIF(username, ''), name) AS label
-         FROM auth_user ORDER BY label ASC",
-    )
-    .fetch_all(&state.pool)
-    .await;
-    match rows {
+    match workers(&state).await {
         Ok(rows) => json_response(
             StatusCode::OK,
             json!({
                 "me": me.id,
+                "canEdit": is_worker(&state, me.username.as_deref()),
                 "users": rows
                     .into_iter()
                     .map(|(id, name)| json!({ "id": id, "name": name }))
@@ -305,6 +390,9 @@ pub async fn list_entries(State(state): State<AppState>, headers: HeaderMap, uri
         Ok(q) => q,
         Err(res) => return res,
     };
+    if let Err(res) = require_worker(&state, &q.user_id).await {
+        return res;
+    }
     match fetch_entries(&state, &q).await {
         Ok(rows) => json_response(
             StatusCode::OK,
@@ -353,6 +441,9 @@ pub async fn create_entry(
         Ok(user) => user,
         Err(res) => return res,
     };
+    if let Err(res) = require_own_timesheet(&state, &me) {
+        return res;
+    }
     let day = match read_day(&headers, body).await {
         Ok(day) => day,
         Err(res) => return res,
@@ -405,6 +496,9 @@ pub async fn update_entry(
         Ok(user) => user,
         Err(res) => return res,
     };
+    if let Err(res) = require_own_timesheet(&state, &me) {
+        return res;
+    }
     let day = match read_day(&headers, body).await {
         Ok(day) => day,
         Err(res) => return res,
@@ -439,6 +533,9 @@ pub async fn delete_entry(
         Ok(user) => user,
         Err(res) => return res,
     };
+    if let Err(res) = require_own_timesheet(&state, &me) {
+        return res;
+    }
     if let Err(res) = owned_entry(&state, id, &me.id).await {
         return res;
     }
@@ -487,10 +584,9 @@ pub async fn export_entries(
         Ok(q) => q,
         Err(res) => return res,
     };
-    let label = match user_label(&state, &q.user_id).await {
-        Ok(Some(label)) => label,
-        Ok(None) => return fail(StatusCode::NOT_FOUND, "Utilisateur introuvable"),
-        Err(err) => return server_error(err, "Erreur export pointage", "Erreur lors de l'export"),
+    let label = match require_worker(&state, &q.user_id).await {
+        Ok(label) => label,
+        Err(res) => return res,
     };
     let rows = match fetch_entries(&state, &q).await {
         Ok(rows) => rows,
@@ -632,8 +728,13 @@ pub fn build_workbook(days: &[Day]) -> Result<Vec<u8>, XlsxError> {
 
     let diff = |row: u32, start: u16, end: u16, minutes: i64| {
         let n = row + 1;
-        Formula::new(format!("={}{n}-{}{n}", col_letter(end), col_letter(start)))
-            .set_result(minutes_fraction(minutes).to_string())
+        // MOD(…;1) : un après-midi qui passe minuit (fin < début) reste positif.
+        Formula::new(format!(
+            "=MOD({}{n}-{}{n},1)",
+            col_letter(end),
+            col_letter(start)
+        ))
+        .set_result(minutes_fraction(minutes).to_string())
     };
 
     let mut total = [0i64; 3];
@@ -802,6 +903,27 @@ mod tests {
     }
 
     #[test]
+    fn apres_midi_apres_minuit() {
+        // Moisson de 22 h à 3 h du matin : 5 h, fin le lendemain.
+        let day = validate(&input(
+            "2023-07-18",
+            ("09:00", "12:00", "betteraves montées"),
+            ("22:00", "03:00", "moisson"),
+        ))
+        .unwrap();
+        let a = day.afternoon.unwrap();
+        assert_eq!((a.start, a.end), (t(22, 0), t(3, 0)));
+        assert_eq!(a.minutes(), 5 * 60);
+        // Jusqu'à 6 h du matin seulement : au-delà, c'est une erreur de saisie.
+        assert!(validate(&input("2023-07-18", ("", "", ""), ("19:00", "06:00", ""))).is_ok());
+        let err = validate(&input("2023-07-18", ("", "", ""), ("14:00", "13:00", ""))).unwrap_err();
+        assert!(err.contains("lendemain"), "{err}");
+        assert!(validate(&input("2023-07-18", ("", "", ""), ("14:00", "14:00", ""))).is_err());
+        // Le matin ne passe jamais minuit.
+        assert!(validate(&input("2023-07-18", ("23:00", "02:00", ""), ("", "", ""))).is_err());
+    }
+
+    #[test]
     fn erreurs_de_saisie() {
         let err = |i: EntryInput| validate(&i).unwrap_err();
         assert_eq!(
@@ -858,7 +980,7 @@ mod tests {
 
     #[test]
     fn nom_de_fichier() {
-        assert_eq!(file_slug("Thibault Dupré"), "thibault_dupr");
+        assert_eq!(file_slug("Jean Dupré"), "jean_dupr");
         assert_eq!(file_slug("../.."), "utilisateur");
     }
 
@@ -875,6 +997,12 @@ mod tests {
                 "2026-04-13",
                 ("06:00", "11:00", "comptage"),
                 ("15:00", "21:00", "terrier"),
+            ))
+            .unwrap(),
+            validate(&input(
+                "2023-07-18",
+                ("", "", ""),
+                ("22:00", "03:00", "moisson"),
             ))
             .unwrap(),
         ];

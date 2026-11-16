@@ -29,7 +29,7 @@ async fn create(app: &TestApp, cookie: &str, body: Value) -> TestResponse {
 /// Second utilisateur avec une journée saisie ; renvoie l'id de la journée.
 async fn other_user_entry(app: &TestApp) -> u64 {
     sqlx::query(
-        "INSERT INTO auth_user (id, name, email, emailVerified, username, displayUsername) VALUES ('u2', 'Ouvrier', 'ouvrier@example.test', 1, 'ouvrier', 'Thib')",
+        "INSERT INTO auth_user (id, name, email, emailVerified, username, displayUsername) VALUES ('u2', 'Ouvrier', 'ouvrier@example.test', 1, 'ouvrier', 'Saisonnier')",
     )
     .execute(app.pool())
     .await
@@ -52,6 +52,7 @@ async fn pointage_crud(pool: MySqlPool) {
     let res = app.get("/api/timesheet/users", &cookie).await;
     assert_eq!(res.status, StatusCode::OK, "{}", res.text);
     assert_eq!(res.body["me"], "u1");
+    assert_eq!(res.body["canEdit"], true);
     assert_eq!(
         res.body["users"],
         json!([{ "id": "u1", "name": "testeur" }])
@@ -249,7 +250,7 @@ async fn pointage_export_excel(pool: MySqlPool) {
     );
     assert_eq!(
         res.headers[header::CONTENT_DISPOSITION],
-        "attachment; filename=\"heures_thib_2026-07-01_2026-07-31.xlsx\""
+        "attachment; filename=\"heures_saisonnier_2026-07-01_2026-07-31.xlsx\""
     );
     assert!(res.text.starts_with("PK"), "fichier xlsx (zip)");
 
@@ -283,4 +284,79 @@ async fn pointage_sans_session(pool: MySqlPool) {
         )
         .await;
     assert_eq!(res.status, StatusCode::UNAUTHORIZED);
+}
+
+#[sqlx::test]
+#[ignore = "nécessite DATABASE_URL"]
+async fn pointage_apres_minuit(pool: MySqlPool) {
+    let app = TestApp::new(pool);
+    let cookie = app.login().await;
+    let res = create(
+        &app,
+        &cookie,
+        json!({
+            "date": "2023-07-18",
+            "morning_start": "09:00",
+            "morning_end": "12:00",
+            "afternoon_start": "22:00",
+            "afternoon_end": "03:00",
+            "afternoon_tasks": "moisson",
+        }),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::CREATED, "{}", res.text);
+    let res = app.get("/api/timesheet/entries", &cookie).await;
+    assert_eq!(res.body[0]["afternoon_start"], "22:00");
+    assert_eq!(res.body[0]["afternoon_end"], "03:00");
+
+    let res = app.get("/api/timesheet/export", &cookie).await;
+    assert_eq!(res.status, StatusCode::OK);
+}
+
+/// Compte connecté sans pointage (ex. les parents) : consultation et export
+/// des comptes ayant un pointage, aucune saisie.
+#[sqlx::test]
+#[ignore = "nécessite DATABASE_URL"]
+async fn pointage_compte_sans_pointage(pool: MySqlPool) {
+    let app = TestApp::with_config(pool, |cfg| cfg.timesheet_users = vec!["ouvrier".into()]);
+    let cookie = app.login().await;
+    other_user_entry(&app).await;
+    sqlx::query(
+        "INSERT INTO auth_user (id, name, email, emailVerified, username, displayUsername) VALUES ('u3', 'Patronne', 'patronne@example.test', 1, 'patronne', 'Patronne')",
+    )
+    .execute(app.pool())
+    .await
+    .expect("auth_user u3");
+
+    let res = app.get("/api/timesheet/users", &cookie).await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(res.body["canEdit"], false);
+    assert_eq!(
+        res.body["users"],
+        json!([{ "id": "u2", "name": "Saisonnier" }])
+    );
+
+    let res = app.get("/api/timesheet/entries?user=u2", &cookie).await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(res.body.as_array().unwrap().len(), 1);
+    let res = app.get("/api/timesheet/export?user=u2", &cookie).await;
+    assert_eq!(res.status, StatusCode::OK);
+
+    // Ni sa propre feuille, ni celle d'un autre compte sans pointage.
+    for uri in [
+        "/api/timesheet/entries",
+        "/api/timesheet/entries?user=u3",
+        "/api/timesheet/export?user=u3",
+    ] {
+        let res = app.get(uri, &cookie).await;
+        assert_eq!(res.status, StatusCode::NOT_FOUND, "{uri}");
+    }
+
+    let res = create(&app, &cookie, day("2026-04-13")).await;
+    assert_eq!(res.status, StatusCode::FORBIDDEN);
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM timesheet_entries")
+        .fetch_one(app.pool())
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
 }

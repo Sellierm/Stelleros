@@ -36,3 +36,6 @@ latest_positions.json
 location_history.json
 # Instructions Claude Code (locales)
 CLAUDE.md
+
+# Feuilles d'heures et exports personnels déposés à la racine
+/*.xlsx

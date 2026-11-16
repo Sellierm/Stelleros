@@ -41,6 +41,8 @@ fn test_config() -> Config {
     cfg.gps_ingest_key = Some(GPS_KEY.into());
     cfg.gps_allowed_ids = vec![GPS_DEVICE.into()];
     cfg.gps_retention_days = None;
+    // `testeur` (connecté par `login`) et `ouvrier` (créé par les tests).
+    cfg.timesheet_users = vec![TEST_USERNAME.into(), "ouvrier".into()];
     cfg
 }
 
@@ -60,8 +62,15 @@ pub struct TestResponse {
 
 impl TestApp {
     pub fn new(pool: MySqlPool) -> Self {
+        Self::with_config(pool, |_| {})
+    }
+
+    /// Comme `new`, avec une configuration ajustée par `tweak`.
+    pub fn with_config(pool: MySqlPool, tweak: impl Fn(&mut Config)) -> Self {
         let http = reqwest::Client::new();
-        let state: AppState = Arc::new(Inner::new(test_config(), pool.clone(), http.clone()));
+        let mut cfg = test_config();
+        tweak(&mut cfg);
+        let state: AppState = Arc::new(Inner::new(cfg, pool.clone(), http.clone()));
         // Socket.IO reçoit son propre état : en production `state` et `io` se
         // référencent mutuellement (sans importance, ils vivent jusqu'à
         // l'arrêt). Ici ce cycle empêcherait de libérer le pool en fin de

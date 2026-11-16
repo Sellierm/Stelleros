@@ -14,14 +14,33 @@ export function parseTime(value: string | null | undefined): number | null {
   return hours * 60 + minutes;
 }
 
+/** Dernière heure de fin (6:00) d'un après-midi qui passe minuit. */
+export const OVERNIGHT_MAX_END = 6 * 60;
+
+/**
+ * L'heure de fin tombe-t-elle le lendemain ? Seul l'après-midi peut passer
+ * minuit (moisson, labour de nuit), et au plus tard jusqu'à 6 h.
+ */
+export function endsNextDay(
+  start: string | null | undefined,
+  end: string | null | undefined,
+): boolean {
+  const s = parseTime(start);
+  const e = parseTime(end);
+  return s !== null && e !== null && e < s && e <= OVERNIGHT_MAX_END;
+}
+
 /** Durée d'une demi-journée en minutes (0 si incomplète ou incohérente). */
 export function halfDayMinutes(
   start: string | null | undefined,
   end: string | null | undefined,
+  overnight = false,
 ): number {
   const s = parseTime(start);
   const e = parseTime(end);
-  return s === null || e === null || e <= s ? 0 : e - s;
+  if (s === null || e === null) return 0;
+  if (e > s) return e - s;
+  return overnight && endsNextDay(start, end) ? e + 24 * 60 - s : 0;
 }
 
 type Times = Pick<
@@ -34,7 +53,7 @@ export function morningMinutes(entry: Times): number {
 }
 
 export function afternoonMinutes(entry: Times): number {
-  return halfDayMinutes(entry.afternoon_start, entry.afternoon_end);
+  return halfDayMinutes(entry.afternoon_start, entry.afternoon_end, true);
 }
 
 export function dayMinutes(entry: Times): number {
@@ -53,6 +72,7 @@ function validateHalf(
   start: string,
   end: string,
   tasks: string,
+  overnight: boolean,
 ): string | null {
   const hasStart = start.trim() !== "";
   const hasEnd = end.trim() !== "";
@@ -67,9 +87,10 @@ function validateHalf(
   const s = parseTime(start);
   const e = parseTime(end);
   if (s === null || e === null) return `${label} : heure invalide`;
-  if (e <= s)
-    return `${label} : l'heure de fin doit être après l'heure de début`;
-  return null;
+  if (e > s || (overnight && endsNextDay(start, end))) return null;
+  return overnight
+    ? `${label} : l'heure de fin doit être après l'heure de début (ou au plus tard 6:00 le lendemain)`
+    : `${label} : l'heure de fin doit être après l'heure de début`;
 }
 
 /** Message d'erreur de saisie, ou null si la journée est valide. */
@@ -80,6 +101,7 @@ export function validatePayload(form: TimesheetPayload): string | null {
     form.morning_start,
     form.morning_end,
     form.morning_tasks,
+    false,
   );
   if (morningError) return morningError;
   const afternoonError = validateHalf(
@@ -87,6 +109,7 @@ export function validatePayload(form: TimesheetPayload): string | null {
     form.afternoon_start,
     form.afternoon_end,
     form.afternoon_tasks,
+    true,
   );
   if (afternoonError) return afternoonError;
 

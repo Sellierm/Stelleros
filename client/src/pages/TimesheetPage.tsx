@@ -19,6 +19,7 @@ import {
   afternoonMinutes,
   dayMinutes,
   emptyPayload,
+  endsNextDay,
   entryToPayload,
   formatDayLabel,
   formatDuration,
@@ -101,12 +102,16 @@ function HalfDayFields({
     (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       onChange(key, e.target.value);
   const hasValue = Boolean(form[start] || form[end] || form[tasks]);
+  const nextDay = prefix === "afternoon" && endsNextDay(form[start], form[end]);
 
   return (
     <fieldset className="ts-half">
       <legend>
         <span>{label}</span>
-        <span className="ts-half-total">{formatDuration(minutes)}</span>
+        <span className="ts-half-total">
+          {formatDuration(minutes)}
+          {nextDay && " · fin le lendemain"}
+        </span>
       </legend>
       <div className="ts-times">
         <label>
@@ -264,6 +269,7 @@ export default function TimesheetPage() {
   usePageMeta("Pointage", "/assets/icons8-champ-32.png");
 
   const [me, setMe] = useState("");
+  const [canEdit, setCanEdit] = useState(false);
   const [users, setUsers] = useState<TimesheetUser[]>([]);
   const [viewedUser, setViewedUser] = useState("");
   const [preset, setPreset] = useState<PresetKey>("year");
@@ -280,15 +286,22 @@ export default function TimesheetPage() {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
 
-  const isMine = !viewedUser || viewedUser === me;
+  // Saisie possible seulement sur sa propre feuille, pour un compte qui a un
+  // pointage ; les autres comptes consultent et exportent.
+  const isMine = canEdit && viewedUser === me;
   const viewedName = users.find((u) => u.id === (viewedUser || me))?.name ?? "";
 
   useEffect(() => {
     apiFetch<TimesheetUsersResponse>("/api/timesheet/users")
       .then((res) => {
         setMe(res.me);
+        setCanEdit(res.canEdit);
         setUsers(res.users);
-        setViewedUser((current) => current || res.me);
+        setViewedUser(
+          (current) =>
+            current || (res.canEdit ? res.me : (res.users[0]?.id ?? "")),
+        );
+        if (!res.canEdit && res.users.length === 0) setLoading(false);
       })
       .catch((error) => {
         setLoadError(
@@ -429,47 +442,49 @@ export default function TimesheetPage() {
           </div>
         </div>
 
-        <div className="ts-layout">
-          <section className="app-card ts-panel ts-panel-form">
-            <div className="ts-panel-header">
-              <div>
-                <h2>
-                  {editing
-                    ? `Modifier le ${formatDayLabel(editing.date)}`
-                    : isMine
-                      ? "Nouvelle journée"
-                      : "Saisie"}
-                </h2>
-                <span className="ts-subtitle">
-                  {isMine
-                    ? "Horaires du matin et de l'après-midi"
-                    : "Lecture seule"}
-                </span>
+        <div className={canEdit ? "ts-layout" : "ts-layout ts-layout-single"}>
+          {canEdit && (
+            <section className="app-card ts-panel ts-panel-form">
+              <div className="ts-panel-header">
+                <div>
+                  <h2>
+                    {editing
+                      ? `Modifier le ${formatDayLabel(editing.date)}`
+                      : isMine
+                        ? "Nouvelle journée"
+                        : "Saisie"}
+                  </h2>
+                  <span className="ts-subtitle">
+                    {isMine
+                      ? "Horaires du matin et de l'après-midi"
+                      : "Lecture seule"}
+                  </span>
+                </div>
               </div>
-            </div>
-            {isMine ? (
-              <EntryForm
-                key={formKey}
-                editing={editing}
-                saving={saving}
-                error={saveError}
-                onSubmit={save}
-                onCancel={resetForm}
-              />
-            ) : (
-              <div className="ts-empty">
-                Vous consultez les heures de <strong>{viewedName}</strong>{" "}
-                (lecture seule).{" "}
-                <button
-                  type="button"
-                  className="ts-link"
-                  onClick={() => setViewedUser(me)}
-                >
-                  Revenir à mes heures
-                </button>
-              </div>
-            )}
-          </section>
+              {isMine ? (
+                <EntryForm
+                  key={formKey}
+                  editing={editing}
+                  saving={saving}
+                  error={saveError}
+                  onSubmit={save}
+                  onCancel={resetForm}
+                />
+              ) : (
+                <div className="ts-empty">
+                  Vous consultez les heures de <strong>{viewedName}</strong>{" "}
+                  (lecture seule).{" "}
+                  <button
+                    type="button"
+                    className="ts-link"
+                    onClick={() => setViewedUser(me)}
+                  >
+                    Revenir à mes heures
+                  </button>
+                </div>
+              )}
+            </section>
+          )}
 
           <section className="app-card ts-panel ts-panel-list">
             <div className="ts-panel-header">
@@ -491,7 +506,7 @@ export default function TimesheetPage() {
             </div>
 
             <div className="ts-toolbar">
-              {users.length > 1 && (
+              {(users.length > 1 || !canEdit) && (
                 <select
                   className="app-input ts-select"
                   value={viewedUser}
@@ -608,7 +623,14 @@ export default function TimesheetPage() {
                           </td>
                           <td data-label="Après-midi">
                             {afternoon
-                              ? `${entry.afternoon_start} – ${entry.afternoon_end}`
+                              ? `${entry.afternoon_start} – ${entry.afternoon_end}${
+                                  endsNextDay(
+                                    entry.afternoon_start,
+                                    entry.afternoon_end,
+                                  )
+                                    ? " (+1 j)"
+                                    : ""
+                                }`
                               : "—"}
                           </td>
                           <td data-label="Durée" className="ts-num">

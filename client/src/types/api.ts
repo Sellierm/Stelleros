@@ -97,6 +97,8 @@ export interface TimesheetUser {
 
 export interface TimesheetUsersResponse {
   me: string;
+  // Le compte connecté a-t-il un pointage (TIMESHEET_USERS) ?
+  canEdit: boolean;
   users: TimesheetUser[];
 }
 

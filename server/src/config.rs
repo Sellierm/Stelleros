@@ -50,6 +50,9 @@ pub struct Config {
     pub auth_secret: String,
     pub trusted_origins: Vec<String>,
     pub client_dist: PathBuf,
+    /// Comptes ayant un pointage des heures (`TIMESHEET_USERS`, noms
+    /// d'utilisateur en minuscules). Vide : tous les comptes en ont un.
+    pub timesheet_users: Vec<String>,
 }
 
 /// Charge `.env` depuis le dossier courant, ou `server/.env` quand le binaire
@@ -174,6 +177,12 @@ impl Config {
         let gps_allowed_ids =
             split_list(&non_empty("GPS_ALLOWED_IDS").unwrap_or_else(|| "6290,7724".into()));
 
+        // La liste vit dans l'environnement du serveur, pas dans le dépôt.
+        let timesheet_users = split_list(&non_empty("TIMESHEET_USERS").unwrap_or_default())
+            .into_iter()
+            .map(|name| name.to_lowercase())
+            .collect();
+
         let gps_retention_days = match non_empty("GPS_RETENTION_DAYS") {
             Some(v) => Some(
                 v.trim()
@@ -228,6 +237,7 @@ impl Config {
             cors_allowed_suffix,
             gps_ingest_key: non_empty("GPS_INGEST_KEY"),
             gps_allowed_ids,
+            timesheet_users,
             gps_retention_days,
             gps_sender_dir: PathBuf::from(
                 non_empty("GPS_SENDER_DIR").unwrap_or_else(|| "gps-sender".into()),
