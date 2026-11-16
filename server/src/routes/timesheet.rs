@@ -6,6 +6,9 @@
 //! un pointage : chacun saisit et modifie ses propres journées. Tout utilisateur connecté peut consulter
 //! et exporter leurs journées (export Excel au format de la feuille d'heures).
 //!
+//! Une demi-journée cochée « x2 » compte double dans les totaux (horaires
+//! inchangés).
+//!
 //! L'après-midi peut se terminer après minuit (moisson, labour de nuit) : une
 //! heure de fin antérieure au début, jusqu'à 6 h, compte pour le lendemain.
 
@@ -34,15 +37,23 @@ const OVERNIGHT_MAX_END_SECS: u32 = 6 * 3600;
 // ── Modèle ────────────────────────────────────────────────────────────────
 
 /// Demi-journée travaillée. Une fin antérieure au début (après-midi
-/// seulement, validé à la saisie) tombe le lendemain.
+/// seulement, validé à la saisie) tombe le lendemain. `double` : heures
+/// comptées deux fois (case « x2 »).
 #[derive(Debug, Clone, PartialEq)]
 pub struct HalfDay {
     pub start: NaiveTime,
     pub end: NaiveTime,
     pub tasks: Option<String>,
+    pub double: bool,
 }
 
 impl HalfDay {
+    /// Heures comptées : la durée, doublée si la case « x2 » est cochée.
+    fn counted_minutes(&self) -> i64 {
+        self.minutes() * if self.double { 2 } else { 1 }
+    }
+
+    /// Durée entre le début et la fin.
     fn minutes(&self) -> i64 {
         let minutes = (self.end - self.start).num_minutes();
         if minutes < 0 {
@@ -69,29 +80,38 @@ struct EntryRow {
     morning_start: Option<NaiveTime>,
     morning_end: Option<NaiveTime>,
     morning_tasks: Option<String>,
+    morning_double: bool,
     afternoon_start: Option<NaiveTime>,
     afternoon_end: Option<NaiveTime>,
     afternoon_tasks: Option<String>,
+    afternoon_double: bool,
 }
 
 const ENTRY_COLUMNS: &str = "id, user_id, date, morning_start, morning_end, morning_tasks, \
-     afternoon_start, afternoon_end, afternoon_tasks";
+     morning_double, afternoon_start, afternoon_end, afternoon_tasks, afternoon_double";
 
 fn half_day(
     start: Option<NaiveTime>,
     end: Option<NaiveTime>,
     tasks: &Option<String>,
+    double: bool,
 ) -> Option<HalfDay> {
     Some(HalfDay {
         start: start?,
         end: end?,
         tasks: tasks.clone(),
+        double,
     })
 }
 
 impl EntryRow {
     fn morning(&self) -> Option<HalfDay> {
-        half_day(self.morning_start, self.morning_end, &self.morning_tasks)
+        half_day(
+            self.morning_start,
+            self.morning_end,
+            &self.morning_tasks,
+            self.morning_double,
+        )
     }
 
     fn afternoon(&self) -> Option<HalfDay> {
@@ -99,6 +119,7 @@ impl EntryRow {
             self.afternoon_start,
             self.afternoon_end,
             &self.afternoon_tasks,
+            self.afternoon_double,
         )
     }
 
@@ -111,9 +132,11 @@ impl EntryRow {
             "morning_start": time(self.morning_start),
             "morning_end": time(self.morning_end),
             "morning_tasks": self.morning_tasks,
+            "morning_double": self.morning_double,
             "afternoon_start": time(self.afternoon_start),
             "afternoon_end": time(self.afternoon_end),
             "afternoon_tasks": self.afternoon_tasks,
+            "afternoon_double": self.afternoon_double,
         })
     }
 }
@@ -127,9 +150,11 @@ pub struct EntryInput {
     pub morning_start: Option<String>,
     pub morning_end: Option<String>,
     pub morning_tasks: Option<String>,
+    pub morning_double: bool,
     pub afternoon_start: Option<String>,
     pub afternoon_end: Option<String>,
     pub afternoon_tasks: Option<String>,
+    pub afternoon_double: bool,
 }
 
 fn non_empty(value: &Option<String>) -> Option<&str> {
@@ -149,6 +174,7 @@ fn validate_half(
     start: &Option<String>,
     end: &Option<String>,
     tasks: &Option<String>,
+    double: bool,
     overnight: bool,
 ) -> Result<Option<HalfDay>, String> {
     let tasks = non_empty(tasks).map(str::to_string);
@@ -166,7 +192,7 @@ fn validate_half(
             .transpose()
     };
     match (parse(start)?, parse(end)?) {
-        (None, None) if tasks.is_some() => {
+        (None, None) if tasks.is_some() || double => {
             Err(format!("{label} : indiquez les heures de début et de fin"))
         }
         (None, None) => Ok(None),
@@ -176,7 +202,12 @@ fn validate_half(
                     && end < start
                     && end.num_seconds_from_midnight() <= OVERNIGHT_MAX_END_SECS) =>
         {
-            Ok(Some(HalfDay { start, end, tasks }))
+            Ok(Some(HalfDay {
+                start,
+                end,
+                tasks,
+                double,
+            }))
         }
         (Some(_), Some(_)) if overnight => Err(format!(
             "{label} : l'heure de fin doit être après l'heure de début (ou au plus tard 6:00 le lendemain)"
@@ -197,6 +228,7 @@ pub fn validate(input: &EntryInput) -> Result<Day, String> {
         &input.morning_start,
         &input.morning_end,
         &input.morning_tasks,
+        input.morning_double,
         false,
     )?;
     let afternoon = validate_half(
@@ -204,6 +236,7 @@ pub fn validate(input: &EntryInput) -> Result<Day, String> {
         &input.afternoon_start,
         &input.afternoon_end,
         &input.afternoon_tasks,
+        input.afternoon_double,
         true,
     )?;
     if morning.is_none() && afternoon.is_none() {
@@ -426,9 +459,11 @@ fn bind_day<'q>(
         .bind(m.map(|h| h.start))
         .bind(m.map(|h| h.end))
         .bind(m.and_then(|h| h.tasks.as_deref()))
+        .bind(m.is_some_and(|h| h.double))
         .bind(a.map(|h| h.start))
         .bind(a.map(|h| h.end))
         .bind(a.and_then(|h| h.tasks.as_deref()))
+        .bind(a.is_some_and(|h| h.double))
 }
 
 /// `POST /api/timesheet/entries` : journée de l'utilisateur connecté.
@@ -450,9 +485,9 @@ pub async fn create_entry(
     };
     let query = sqlx::query(
         "INSERT INTO timesheet_entries
-           (date, morning_start, morning_end, morning_tasks,
-            afternoon_start, afternoon_end, afternoon_tasks, user_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+           (date, morning_start, morning_end, morning_tasks, morning_double,
+            afternoon_start, afternoon_end, afternoon_tasks, afternoon_double, user_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     );
     match bind_day(query, &day)
         .bind(&me.id)
@@ -508,8 +543,8 @@ pub async fn update_entry(
     }
     let query = sqlx::query(
         "UPDATE timesheet_entries SET
-           date = ?, morning_start = ?, morning_end = ?, morning_tasks = ?,
-           afternoon_start = ?, afternoon_end = ?, afternoon_tasks = ?
+           date = ?, morning_start = ?, morning_end = ?, morning_tasks = ?, morning_double = ?,
+           afternoon_start = ?, afternoon_end = ?, afternoon_tasks = ?, afternoon_double = ?
          WHERE id = ? AND user_id = ?",
     );
     match bind_day(query, &day)
@@ -726,13 +761,15 @@ pub fn build_workbook(days: &[Day]) -> Result<Vec<u8>, XlsxError> {
         sheet.write_string_with_format(1, col, "Fin", &header)?;
     }
 
-    let diff = |row: u32, start: u16, end: u16, minutes: i64| {
+    let diff = |row: u32, start: u16, end: u16, double: bool, minutes: i64| {
         let n = row + 1;
         // MOD(…;1) : un après-midi qui passe minuit (fin < début) reste positif.
+        // « *2 » : demi-journée cochée « x2 ».
         Formula::new(format!(
-            "=MOD({}{n}-{}{n},1)",
+            "=MOD({}{n}-{}{n},1){}",
             col_letter(end),
-            col_letter(start)
+            col_letter(start),
+            if double { "*2" } else { "" }
         ))
         .set_result(minutes_fraction(minutes).to_string())
     };
@@ -748,7 +785,8 @@ pub fn build_workbook(days: &[Day]) -> Result<Vec<u8>, XlsxError> {
         ];
         let mut day_minutes = 0;
         for (k, (half, start, end, sum, tasks)) in halves.into_iter().enumerate() {
-            let minutes = half.as_ref().map_or(0, HalfDay::minutes);
+            let minutes = half.as_ref().map_or(0, HalfDay::counted_minutes);
+            let double = half.as_ref().is_some_and(|h| h.double);
             match half {
                 Some(h) => {
                     sheet.write_number_with_format(row, start, excel_time(h.start), &time_fmt)?;
@@ -767,7 +805,7 @@ pub fn build_workbook(days: &[Day]) -> Result<Vec<u8>, XlsxError> {
             sheet.write_formula_with_format(
                 row,
                 sum,
-                diff(row, start, end, minutes),
+                diff(row, start, end, double, minutes),
                 &total_fmt,
             )?;
             total[k] += minutes;
@@ -845,6 +883,7 @@ mod tests {
             afternoon_start: s(a.0),
             afternoon_end: s(a.1),
             afternoon_tasks: s(a.2),
+            ..Default::default()
         }
     }
 
@@ -924,6 +963,34 @@ mod tests {
     }
 
     #[test]
+    fn case_x2_double_les_heures() {
+        let mut i = input(
+            "2026-05-01",
+            ("10:00", "12:00", "apport blé"),
+            ("15:00", "21:00", "apport blé"),
+        );
+        i.afternoon_double = true;
+        let day = validate(&i).unwrap();
+        let (m, a) = (day.morning.unwrap(), day.afternoon.unwrap());
+        assert!(!m.double && a.double);
+        assert_eq!(m.counted_minutes(), 2 * 60);
+        // Horaires inchangés, heures comptées doublées.
+        assert_eq!((a.start, a.end, a.minutes()), (t(15, 0), t(21, 0), 6 * 60));
+        assert_eq!(a.counted_minutes(), 12 * 60);
+        // Après minuit aussi.
+        let mut i = input("2023-07-18", ("", "", ""), ("22:00", "03:00", ""));
+        i.afternoon_double = true;
+        assert_eq!(
+            validate(&i).unwrap().afternoon.unwrap().counted_minutes(),
+            10 * 60
+        );
+        // x2 sans horaires : erreur, comme des travaux sans horaires.
+        let mut i = input("2026-05-01", ("", "", ""), ("15:00", "21:00", ""));
+        i.morning_double = true;
+        assert!(validate(&i).unwrap_err().starts_with("Matin"));
+    }
+
+    #[test]
     fn erreurs_de_saisie() {
         let err = |i: EntryInput| validate(&i).unwrap_err();
         assert_eq!(
@@ -986,7 +1053,10 @@ mod tests {
 
     #[test]
     fn classeur_genere() {
+        let mut double = input("2026-05-01", ("", "", ""), ("15:00", "21:00", "apport blé"));
+        double.afternoon_double = true;
         let days = vec![
+            validate(&double).unwrap(),
             validate(&input(
                 "2025-12-21",
                 ("10:00", "13:00", "labour"),

@@ -103,6 +103,7 @@ export interface TimesheetUsersResponse {
 }
 
 // Heures « HH:MM » ; une demi-journée non travaillée a ses heures à null.
+// `*_double` : case « x2 », les heures de la demi-journée comptent double.
 export interface TimesheetEntry {
   id: number;
   user_id: string;
@@ -110,9 +111,11 @@ export interface TimesheetEntry {
   morning_start: string | null;
   morning_end: string | null;
   morning_tasks: string | null;
+  morning_double: boolean;
   afternoon_start: string | null;
   afternoon_end: string | null;
   afternoon_tasks: string | null;
+  afternoon_double: boolean;
 }
 
 // Formulaire de saisie : chaînes vides pour les champs non renseignés.
@@ -121,9 +124,11 @@ export interface TimesheetPayload {
   morning_start: string;
   morning_end: string;
   morning_tasks: string;
+  morning_double: boolean;
   afternoon_start: string;
   afternoon_end: string;
   afternoon_tasks: string;
+  afternoon_double: boolean;
 }
 
 // ─── Prévisions (OpenWeatherMap One Call, `{}` en cas d'erreur) ─

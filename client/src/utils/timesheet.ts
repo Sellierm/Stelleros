@@ -46,14 +46,23 @@ export function halfDayMinutes(
 type Times = Pick<
   TimesheetEntry,
   "morning_start" | "morning_end" | "afternoon_start" | "afternoon_end"
->;
+> &
+  Partial<Pick<TimesheetEntry, "morning_double" | "afternoon_double">>;
 
+/** Heures comptées du matin : la durée, doublée si la case « x2 » est cochée. */
 export function morningMinutes(entry: Times): number {
-  return halfDayMinutes(entry.morning_start, entry.morning_end);
+  const minutes = halfDayMinutes(entry.morning_start, entry.morning_end);
+  return entry.morning_double ? minutes * 2 : minutes;
 }
 
+/** Heures comptées de l'après-midi (passage de minuit compris, « x2 » doublé). */
 export function afternoonMinutes(entry: Times): number {
-  return halfDayMinutes(entry.afternoon_start, entry.afternoon_end, true);
+  const minutes = halfDayMinutes(
+    entry.afternoon_start,
+    entry.afternoon_end,
+    true,
+  );
+  return entry.afternoon_double ? minutes * 2 : minutes;
 }
 
 export function dayMinutes(entry: Times): number {
@@ -72,12 +81,13 @@ function validateHalf(
   start: string,
   end: string,
   tasks: string,
+  double: boolean,
   overnight: boolean,
 ): string | null {
   const hasStart = start.trim() !== "";
   const hasEnd = end.trim() !== "";
   if (!hasStart && !hasEnd) {
-    return tasks.trim()
+    return tasks.trim() || double
       ? `${label} : indiquez les heures de début et de fin`
       : null;
   }
@@ -101,6 +111,7 @@ export function validatePayload(form: TimesheetPayload): string | null {
     form.morning_start,
     form.morning_end,
     form.morning_tasks,
+    form.morning_double,
     false,
   );
   if (morningError) return morningError;
@@ -109,6 +120,7 @@ export function validatePayload(form: TimesheetPayload): string | null {
     form.afternoon_start,
     form.afternoon_end,
     form.afternoon_tasks,
+    form.afternoon_double,
     true,
   );
   if (afternoonError) return afternoonError;
@@ -166,9 +178,11 @@ export function emptyPayload(date: string): TimesheetPayload {
     morning_start: "",
     morning_end: "",
     morning_tasks: "",
+    morning_double: false,
     afternoon_start: "",
     afternoon_end: "",
     afternoon_tasks: "",
+    afternoon_double: false,
   };
 }
 
@@ -178,8 +192,10 @@ export function entryToPayload(entry: TimesheetEntry): TimesheetPayload {
     morning_start: entry.morning_start ?? "",
     morning_end: entry.morning_end ?? "",
     morning_tasks: entry.morning_tasks ?? "",
+    morning_double: entry.morning_double,
     afternoon_start: entry.afternoon_start ?? "",
     afternoon_end: entry.afternoon_end ?? "",
     afternoon_tasks: entry.afternoon_tasks ?? "",
+    afternoon_double: entry.afternoon_double,
   };
 }

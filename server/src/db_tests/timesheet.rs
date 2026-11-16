@@ -73,9 +73,11 @@ async fn pointage_crud(pool: MySqlPool) {
             "morning_start": "09:00",
             "morning_end": "12:00",
             "morning_tasks": "labour",
+            "morning_double": false,
             "afternoon_start": null,
             "afternoon_end": null,
             "afternoon_tasks": null,
+            "afternoon_double": false,
         }])
     );
 
@@ -301,6 +303,7 @@ async fn pointage_apres_minuit(pool: MySqlPool) {
             "afternoon_start": "22:00",
             "afternoon_end": "03:00",
             "afternoon_tasks": "moisson",
+            "afternoon_double": true,
         }),
     )
     .await;
@@ -308,6 +311,8 @@ async fn pointage_apres_minuit(pool: MySqlPool) {
     let res = app.get("/api/timesheet/entries", &cookie).await;
     assert_eq!(res.body[0]["afternoon_start"], "22:00");
     assert_eq!(res.body[0]["afternoon_end"], "03:00");
+    assert_eq!(res.body[0]["morning_double"], false);
+    assert_eq!(res.body[0]["afternoon_double"], true);
 
     let res = app.get("/api/timesheet/export", &cookie).await;
     assert_eq!(res.status, StatusCode::OK);

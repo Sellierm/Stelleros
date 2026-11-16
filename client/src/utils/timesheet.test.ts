@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  afternoonMinutes,
   dayMinutes,
   emptyPayload,
   endsNextDay,
@@ -7,6 +8,7 @@ import {
   formatDuration,
   halfDayMinutes,
   monthPeriod,
+  morningMinutes,
   parseTime,
   validatePayload,
   yearPeriod,
@@ -86,6 +88,43 @@ describe("après-midi après minuit", () => {
     expect(
       validatePayload(
         payload({ morning_start: "23:00", morning_end: "02:00" }),
+      ),
+    ).toMatch(/^Matin/);
+  });
+});
+
+describe("case x2", () => {
+  it("double les heures de la demi-journée cochée", () => {
+    const day = payload({
+      morning_start: "10:00",
+      morning_end: "12:00",
+      afternoon_start: "15:00",
+      afternoon_end: "21:00",
+      afternoon_double: true,
+    });
+    expect(morningMinutes(day)).toBe(120);
+    expect(afternoonMinutes(day)).toBe(12 * 60);
+    expect(dayMinutes(day)).toBe(14 * 60);
+    expect(validatePayload(day)).toBeNull();
+  });
+
+  it("double aussi un après-midi qui passe minuit", () => {
+    const day = payload({
+      afternoon_start: "22:00",
+      afternoon_end: "03:00",
+      afternoon_double: true,
+    });
+    expect(afternoonMinutes(day)).toBe(10 * 60);
+  });
+
+  it("refuse x2 sans horaires", () => {
+    expect(
+      validatePayload(
+        payload({
+          morning_double: true,
+          afternoon_start: "14:00",
+          afternoon_end: "17:00",
+        }),
       ),
     ).toMatch(/^Matin/);
   });

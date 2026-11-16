@@ -246,7 +246,10 @@ GET    /api/timesheet/export?user=&from=&to=      → .xlsx
 Dates are `YYYY-MM-DD`, times `HH:MM`; a half-day has both times or none, its
 end after its start, and the morning must end before the afternoon starts.
 The afternoon may run past midnight (harvest, night ploughing): an end time
-earlier than the start, up to 06:00, falls on the next day.
+earlier than the start, up to 06:00, falls on the next day. Each half-day has
+an « x2 » box (`morning_double`, `afternoon_double`): its hours count double in
+every total (the times themselves are unchanged); the export multiplies that
+half-day total by 2.
 
 The Excel export keeps the usual sheet layout (Date, Matin début/fin, Total
 Matin, Travaux effectués, Après-midi début/fin, Total apm, Travaux effectués,
