@@ -6,7 +6,9 @@ import {
   endsNextDay,
   formatDayLabel,
   formatDuration,
+  fillMonths,
   formatMonthLabel,
+  formatMonthShort,
   groupStats,
   halfDayMinutes,
   monthKey,
@@ -255,5 +257,20 @@ describe("statistiques", () => {
 
   it("libellé du mois", () => {
     expect(formatMonthLabel("2026-05")).toBe("mai 2026");
+    expect(formatMonthShort("2026-05")).toBe("mai 26");
+    expect(formatMonthShort("2025-12")).toBe("déc 25");
+  });
+
+  it("complète les mois sans journée", () => {
+    const rows = fillMonths(groupStats(entries, monthKey));
+    expect(rows.map((r) => [r.key, r.total])).toEqual([
+      ["2025-12", 180],
+      ["2026-01", 0],
+      ["2026-02", 0],
+      ["2026-03", 0],
+      ["2026-04", 900],
+      ["2026-05", 180],
+    ]);
+    expect(fillMonths([])).toEqual([]);
   });
 });

@@ -23,7 +23,9 @@ import {
   entryToPayload,
   formatDayLabel,
   formatDuration,
+  fillMonths,
   formatMonthLabel,
+  formatMonthShort,
   groupStats,
   isoDate,
   monthKey,
@@ -34,8 +36,8 @@ import {
   yearKey,
   yearPeriod,
   type Period,
-  type StatRow,
 } from "../utils/timesheet";
+import { StatCard } from "./TimesheetStats";
 import "./TimesheetPage.css";
 
 type PresetKey =
@@ -284,107 +286,7 @@ function EntryForm({
   );
 }
 
-// ─── Statistiques ─────────────────────────────────────────────
-
-interface StatTableProps {
-  title: string;
-  subtitle: string;
-  column: string;
-  rows: StatRow[];
-  label: (key: string) => string;
-  /** Colonnes Matin et Après-midi. */
-  halves?: boolean;
-}
-
-function StatTable({
-  title,
-  subtitle,
-  column,
-  rows,
-  label,
-  halves = false,
-}: StatTableProps) {
-  const total = sumStats(rows);
-  const showDoubled = total.doubled > 0;
-  const average = (row: StatRow) =>
-    formatDuration(row.days ? row.total / row.days : 0);
-  const cells = (row: StatRow) => (
-    <>
-      <td data-label="Jours" className="ts-num">
-        {row.days}
-      </td>
-      {halves && (
-        <>
-          <td data-label="Matin" className="ts-num">
-            {formatDuration(row.morning)}
-          </td>
-          <td data-label="Après-midi" className="ts-num">
-            {formatDuration(row.afternoon)}
-          </td>
-        </>
-      )}
-      <td data-label="Heures" className="ts-num ts-day-total">
-        {formatDuration(row.total)}
-      </td>
-      <td data-label="Moy./jour" className="ts-num">
-        {average(row)}
-      </td>
-      {showDoubled && (
-        <td data-label="dont x2" className="ts-num">
-          {row.doubled ? formatDuration(row.doubled) : ""}
-        </td>
-      )}
-    </>
-  );
-
-  return (
-    <section className="app-card ts-panel ts-stat-card">
-      <div className="ts-panel-header">
-        <div>
-          <h2>{title}</h2>
-          <span className="ts-subtitle">{subtitle}</span>
-        </div>
-      </div>
-      <div className="ts-table-wrap">
-        <table className="ts-table ts-stat-table">
-          <thead>
-            <tr>
-              <th>{column}</th>
-              <th>Jours</th>
-              {halves && (
-                <>
-                  <th>Matin</th>
-                  <th>Après-midi</th>
-                </>
-              )}
-              <th>Heures</th>
-              <th>Moy./jour</th>
-              {showDoubled && (
-                <th title="Heures ajoutées par les cases x2">dont x2</th>
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.key}>
-                <td className="ts-cell-date">{label(row.key)}</td>
-                {cells(row)}
-              </tr>
-            ))}
-          </tbody>
-          {rows.length > 1 && (
-            <tfoot>
-              <tr>
-                <td>Total</td>
-                {cells(total)}
-              </tr>
-            </tfoot>
-          )}
-        </table>
-      </div>
-    </section>
-  );
-}
+const yearLabel = (key: string) => key;
 
 // ─── Page ─────────────────────────────────────────────────────
 
@@ -470,7 +372,10 @@ export default function TimesheetPage() {
     return { total, days, average: days ? total / days : 0 };
   }, [entries]);
 
-  const byMonth = useMemo(() => groupStats(entries, monthKey), [entries]);
+  const byMonth = useMemo(
+    () => fillMonths(groupStats(entries, monthKey)),
+    [entries],
+  );
   const byYear = useMemo(() => groupStats(entries, yearKey), [entries]);
 
   // Recharge aussi après chaque saisie (entries change).
@@ -506,7 +411,10 @@ export default function TimesheetPage() {
       })),
     [allEntries],
   );
-  const userName = (id: string) => users.find((u) => u.id === id)?.name ?? id;
+  const userName = useCallback(
+    (id: string) => users.find((u) => u.id === id)?.name ?? id,
+    [users],
+  );
   const periodLabel =
     PRESETS.find((p) => p.key === preset)?.label.toLowerCase() ?? "";
 
@@ -878,32 +786,34 @@ export default function TimesheetPage() {
         {!loading && (byMonth.length > 0 || byUser.length > 0) && (
           <div className="ts-stats">
             {byMonth.length > 0 && (
-              <StatTable
+              <StatCard
                 title="Par mois"
                 subtitle={viewedName ? `Heures de ${viewedName}` : ""}
                 column="Mois"
                 rows={byMonth}
                 label={formatMonthLabel}
+                tick={formatMonthShort}
                 halves
               />
             )}
             {byYear.length > 1 && (
-              <StatTable
+              <StatCard
                 title="Par année"
                 subtitle={viewedName ? `Heures de ${viewedName}` : ""}
                 column="Année"
                 rows={byYear}
-                label={(key) => key}
+                label={yearLabel}
                 halves
               />
             )}
             {byUser.length > 0 && (
-              <StatTable
+              <StatCard
                 title="Par personne"
                 subtitle={`Période : ${periodLabel}`}
                 column="Nom"
                 rows={byUser}
                 label={userName}
+                horizontal
               />
             )}
           </div>

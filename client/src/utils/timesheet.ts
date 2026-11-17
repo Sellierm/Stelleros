@@ -269,3 +269,39 @@ export function formatMonthLabel(key: string): string {
     year: "numeric",
   });
 }
+
+/**
+ * Lignes mensuelles contiguës : les mois sans journée entre le premier et le
+ * dernier valent 0, pour qu'un graphique garde un axe du temps régulier.
+ */
+export function fillMonths(rows: StatRow[]): StatRow[] {
+  if (rows.length === 0) return [];
+  const byKey = new Map(rows.map((row) => [row.key, row]));
+  const [firstYear, firstMonth] = rows[0].key.split("-").map(Number);
+  const last = rows[rows.length - 1].key;
+  const out: StatRow[] = [];
+  for (let i = 0; ; i += 1) {
+    const date = new Date(firstYear, firstMonth - 1 + i, 1);
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    out.push(
+      byKey.get(key) ?? {
+        key,
+        days: 0,
+        morning: 0,
+        afternoon: 0,
+        total: 0,
+        doubled: 0,
+      },
+    );
+    if (key >= last) return out;
+  }
+}
+
+/** « 2026-05 » → « mai 26 » (axe des graphiques). */
+export function formatMonthShort(key: string): string {
+  const [y, m] = key.split("-").map(Number);
+  const month = new Date(y, m - 1, 1)
+    .toLocaleDateString("fr-FR", { month: "short" })
+    .replace(".", "");
+  return `${month} ${String(y).slice(2)}`;
+}
