@@ -363,6 +363,19 @@
   background: rgba(181, 68, 58, 0.14);
 }
 
+/* ── Statistiques (bas de page) ───────────────────────────────────────── */
+
+.ts-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.ts-stat-table td:first-child {
+  text-transform: capitalize;
+}
+
 /* ── Mobile : formulaire puis cartes ──────────────────────────────────── */
 
 @media (max-width: 900px) {
@@ -446,5 +459,15 @@
 
   .ts-table tfoot td {
     border: 0;
+  }
+
+  .ts-stat-table tfoot tr {
+    flex-wrap: wrap;
+    gap: 2px 12px;
+    justify-content: flex-start;
+  }
+
+  .ts-stats {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

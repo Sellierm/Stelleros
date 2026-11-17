@@ -199,3 +199,73 @@ export function entryToPayload(entry: TimesheetEntry): TimesheetPayload {
     afternoon_double: entry.afternoon_double,
   };
 }
+
+// ─── Statistiques ─────────────────────────────────────────────
+
+export interface StatRow {
+  key: string;
+  days: number;
+  morning: number;
+  afternoon: number;
+  total: number;
+  /** Minutes ajoutées par les cases « x2 » (déjà comprises dans total). */
+  doubled: number;
+}
+
+/** Totaux par groupe (mois, année…), dans l'ordre croissant des clés. */
+export function groupStats(
+  entries: TimesheetEntry[],
+  keyOf: (entry: TimesheetEntry) => string,
+): StatRow[] {
+  const rows = new Map<string, StatRow>();
+  for (const entry of entries) {
+    const key = keyOf(entry);
+    const row = rows.get(key) ?? {
+      key,
+      days: 0,
+      morning: 0,
+      afternoon: 0,
+      total: 0,
+      doubled: 0,
+    };
+    const morning = morningMinutes(entry);
+    const afternoon = afternoonMinutes(entry);
+    if (morning + afternoon > 0) row.days += 1;
+    row.morning += morning;
+    row.afternoon += afternoon;
+    row.total += morning + afternoon;
+    if (entry.morning_double) row.doubled += morning / 2;
+    if (entry.afternoon_double) row.doubled += afternoon / 2;
+    rows.set(key, row);
+  }
+  return [...rows.values()].sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/** Somme de plusieurs lignes (ligne « Total » d'un tableau). */
+export function sumStats(rows: StatRow[], key = "total"): StatRow {
+  return rows.reduce(
+    (sum, row) => ({
+      key,
+      days: sum.days + row.days,
+      morning: sum.morning + row.morning,
+      afternoon: sum.afternoon + row.afternoon,
+      total: sum.total + row.total,
+      doubled: sum.doubled + row.doubled,
+    }),
+    { key, days: 0, morning: 0, afternoon: 0, total: 0, doubled: 0 },
+  );
+}
+
+export const monthKey = (entry: Pick<TimesheetEntry, "date">) =>
+  entry.date.slice(0, 7);
+export const yearKey = (entry: Pick<TimesheetEntry, "date">) =>
+  entry.date.slice(0, 4);
+
+/** « 2026-05 » → « mai 2026 ». */
+export function formatMonthLabel(key: string): string {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("fr-FR", {
+    month: "long",
+    year: "numeric",
+  });
+}

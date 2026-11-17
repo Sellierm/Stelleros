@@ -6,14 +6,19 @@ import {
   endsNextDay,
   formatDayLabel,
   formatDuration,
+  formatMonthLabel,
+  groupStats,
   halfDayMinutes,
+  monthKey,
   monthPeriod,
   morningMinutes,
   parseTime,
+  sumStats,
   validatePayload,
+  yearKey,
   yearPeriod,
 } from "./timesheet";
-import type { TimesheetPayload } from "../types/api";
+import type { TimesheetEntry, TimesheetPayload } from "../types/api";
 
 function payload(overrides: Partial<TimesheetPayload>): TimesheetPayload {
   return { ...emptyPayload("2026-04-13"), ...overrides };
@@ -190,5 +195,65 @@ describe("périodes", () => {
 
   it("affiche une date sans décalage de fuseau", () => {
     expect(formatDayLabel("2026-04-13")).toMatch(/13\/04\/2026$/);
+  });
+});
+
+describe("statistiques", () => {
+  const entry = (
+    id: number,
+    date: string,
+    overrides: Partial<TimesheetEntry> = {},
+  ): TimesheetEntry => ({
+    id,
+    user_id: "u1",
+    date,
+    morning_start: "09:00",
+    morning_end: "12:00",
+    morning_tasks: null,
+    morning_double: false,
+    afternoon_start: null,
+    afternoon_end: null,
+    afternoon_tasks: null,
+    afternoon_double: false,
+    ...overrides,
+  });
+  const entries = [
+    entry(1, "2026-05-02"),
+    entry(2, "2026-04-30", {
+      afternoon_start: "15:00",
+      afternoon_end: "21:00",
+      afternoon_double: true,
+    }),
+    entry(3, "2025-12-01"),
+  ];
+
+  it("regroupe par mois, x2 compris", () => {
+    const rows = groupStats(entries, monthKey);
+    expect(rows.map((r) => r.key)).toEqual(["2025-12", "2026-04", "2026-05"]);
+    expect(rows[1]).toEqual({
+      key: "2026-04",
+      days: 1,
+      morning: 180,
+      afternoon: 720,
+      total: 900,
+      doubled: 360,
+    });
+  });
+
+  it("regroupe par année et totalise", () => {
+    const rows = groupStats(entries, yearKey);
+    expect(rows.map((r) => [r.key, r.days, r.total])).toEqual([
+      ["2025", 1, 180],
+      ["2026", 2, 1080],
+    ]);
+    expect(sumStats(rows)).toMatchObject({
+      days: 3,
+      total: 1260,
+      doubled: 360,
+    });
+  });
+
+  it("libellé du mois", () => {
+    expect(formatMonthLabel("2026-05")).toBe("mai 2026");
   });
 });

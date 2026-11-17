@@ -23,12 +23,18 @@ import {
   entryToPayload,
   formatDayLabel,
   formatDuration,
+  formatMonthLabel,
+  groupStats,
   isoDate,
+  monthKey,
   monthPeriod,
   morningMinutes,
+  sumStats,
   validatePayload,
+  yearKey,
   yearPeriod,
   type Period,
+  type StatRow,
 } from "../utils/timesheet";
 import "./TimesheetPage.css";
 
@@ -278,6 +284,108 @@ function EntryForm({
   );
 }
 
+// ─── Statistiques ─────────────────────────────────────────────
+
+interface StatTableProps {
+  title: string;
+  subtitle: string;
+  column: string;
+  rows: StatRow[];
+  label: (key: string) => string;
+  /** Colonnes Matin et Après-midi. */
+  halves?: boolean;
+}
+
+function StatTable({
+  title,
+  subtitle,
+  column,
+  rows,
+  label,
+  halves = false,
+}: StatTableProps) {
+  const total = sumStats(rows);
+  const showDoubled = total.doubled > 0;
+  const average = (row: StatRow) =>
+    formatDuration(row.days ? row.total / row.days : 0);
+  const cells = (row: StatRow) => (
+    <>
+      <td data-label="Jours" className="ts-num">
+        {row.days}
+      </td>
+      {halves && (
+        <>
+          <td data-label="Matin" className="ts-num">
+            {formatDuration(row.morning)}
+          </td>
+          <td data-label="Après-midi" className="ts-num">
+            {formatDuration(row.afternoon)}
+          </td>
+        </>
+      )}
+      <td data-label="Heures" className="ts-num ts-day-total">
+        {formatDuration(row.total)}
+      </td>
+      <td data-label="Moy./jour" className="ts-num">
+        {average(row)}
+      </td>
+      {showDoubled && (
+        <td data-label="dont x2" className="ts-num">
+          {row.doubled ? formatDuration(row.doubled) : ""}
+        </td>
+      )}
+    </>
+  );
+
+  return (
+    <section className="app-card ts-panel ts-stat-card">
+      <div className="ts-panel-header">
+        <div>
+          <h2>{title}</h2>
+          <span className="ts-subtitle">{subtitle}</span>
+        </div>
+      </div>
+      <div className="ts-table-wrap">
+        <table className="ts-table ts-stat-table">
+          <thead>
+            <tr>
+              <th>{column}</th>
+              <th>Jours</th>
+              {halves && (
+                <>
+                  <th>Matin</th>
+                  <th>Après-midi</th>
+                </>
+              )}
+              <th>Heures</th>
+              <th>Moy./jour</th>
+              {showDoubled && (
+                <th title="Heures ajoutées par les cases x2">dont x2</th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.key}>
+                <td className="ts-cell-date">{label(row.key)}</td>
+                {cells(row)}
+              </tr>
+            ))}
+          </tbody>
+          {rows.length > 1 && (
+            <tfoot>
+              <tr>
+                <td>Total</td>
+                {cells(total)}
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+    </section>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────
 
 export default function TimesheetPage() {
@@ -301,6 +409,10 @@ export default function TimesheetPage() {
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
+  // Journées de chaque compte sur la période (tableau « Par personne »).
+  const [allEntries, setAllEntries] = useState<
+    { user: TimesheetUser; entries: TimesheetEntry[] }[]
+  >([]);
 
   // Saisie possible seulement sur sa propre feuille, pour un compte qui a un
   // pointage ; les autres comptes consultent et exportent.
@@ -357,6 +469,46 @@ export default function TimesheetPage() {
     const days = entries.filter((e) => dayMinutes(e) > 0).length;
     return { total, days, average: days ? total / days : 0 };
   }, [entries]);
+
+  const byMonth = useMemo(() => groupStats(entries, monthKey), [entries]);
+  const byYear = useMemo(() => groupStats(entries, yearKey), [entries]);
+
+  // Recharge aussi après chaque saisie (entries change).
+  useEffect(() => {
+    if (users.length < 2) {
+      setAllEntries([]);
+      return;
+    }
+    let cancelled = false;
+    Promise.all(
+      users.map((user) =>
+        apiFetch<TimesheetEntry[]>(
+          `/api/timesheet/entries${periodQuery(user.id, period)}`,
+        ).then((rows) => ({ user, entries: rows })),
+      ),
+    )
+      .then((rows) => {
+        if (!cancelled) setAllEntries(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setAllEntries([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [apiFetch, users, period, entries]);
+
+  const byUser = useMemo(
+    () =>
+      allEntries.map(({ user, entries: rows }) => ({
+        ...sumStats(groupStats(rows, () => user.id)),
+        key: user.id,
+      })),
+    [allEntries],
+  );
+  const userName = (id: string) => users.find((u) => u.id === id)?.name ?? id;
+  const periodLabel =
+    PRESETS.find((p) => p.key === preset)?.label.toLowerCase() ?? "";
 
   const choosePreset = (key: PresetKey) => {
     setPreset(key);
@@ -722,6 +874,40 @@ export default function TimesheetPage() {
             )}
           </section>
         </div>
+
+        {!loading && (byMonth.length > 0 || byUser.length > 0) && (
+          <div className="ts-stats">
+            {byMonth.length > 0 && (
+              <StatTable
+                title="Par mois"
+                subtitle={viewedName ? `Heures de ${viewedName}` : ""}
+                column="Mois"
+                rows={byMonth}
+                label={formatMonthLabel}
+                halves
+              />
+            )}
+            {byYear.length > 1 && (
+              <StatTable
+                title="Par année"
+                subtitle={viewedName ? `Heures de ${viewedName}` : ""}
+                column="Année"
+                rows={byYear}
+                label={(key) => key}
+                halves
+              />
+            )}
+            {byUser.length > 0 && (
+              <StatTable
+                title="Par personne"
+                subtitle={`Période : ${periodLabel}`}
+                column="Nom"
+                rows={byUser}
+                label={userName}
+              />
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
