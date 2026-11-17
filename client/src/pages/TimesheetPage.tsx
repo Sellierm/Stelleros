@@ -23,13 +23,21 @@ import {
   entryToPayload,
   formatDayLabel,
   formatDuration,
+  fillMonths,
+  formatMonthLabel,
+  formatMonthShort,
+  groupStats,
   isoDate,
+  monthKey,
   monthPeriod,
   morningMinutes,
+  sumStats,
   validatePayload,
+  yearKey,
   yearPeriod,
   type Period,
 } from "../utils/timesheet";
+import { StatCard } from "./TimesheetStats";
 import "./TimesheetPage.css";
 
 type PresetKey =
@@ -278,6 +286,8 @@ function EntryForm({
   );
 }
 
+const yearLabel = (key: string) => key;
+
 // ─── Page ─────────────────────────────────────────────────────
 
 export default function TimesheetPage() {
@@ -301,6 +311,10 @@ export default function TimesheetPage() {
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
+  // Journées de chaque compte sur la période (tableau « Par personne »).
+  const [allEntries, setAllEntries] = useState<
+    { user: TimesheetUser; entries: TimesheetEntry[] }[]
+  >([]);
 
   // Saisie possible seulement sur sa propre feuille, pour un compte qui a un
   // pointage ; les autres comptes consultent et exportent.
@@ -357,6 +371,52 @@ export default function TimesheetPage() {
     const days = entries.filter((e) => dayMinutes(e) > 0).length;
     return { total, days, average: days ? total / days : 0 };
   }, [entries]);
+
+  const byMonth = useMemo(
+    () => fillMonths(groupStats(entries, monthKey)),
+    [entries],
+  );
+  const byYear = useMemo(() => groupStats(entries, yearKey), [entries]);
+
+  // Recharge aussi après chaque saisie (entries change).
+  useEffect(() => {
+    if (users.length < 2) {
+      setAllEntries([]);
+      return;
+    }
+    let cancelled = false;
+    Promise.all(
+      users.map((user) =>
+        apiFetch<TimesheetEntry[]>(
+          `/api/timesheet/entries${periodQuery(user.id, period)}`,
+        ).then((rows) => ({ user, entries: rows })),
+      ),
+    )
+      .then((rows) => {
+        if (!cancelled) setAllEntries(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setAllEntries([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [apiFetch, users, period, entries]);
+
+  const byUser = useMemo(
+    () =>
+      allEntries.map(({ user, entries: rows }) => ({
+        ...sumStats(groupStats(rows, () => user.id)),
+        key: user.id,
+      })),
+    [allEntries],
+  );
+  const userName = useCallback(
+    (id: string) => users.find((u) => u.id === id)?.name ?? id,
+    [users],
+  );
+  const periodLabel =
+    PRESETS.find((p) => p.key === preset)?.label.toLowerCase() ?? "";
 
   const choosePreset = (key: PresetKey) => {
     setPreset(key);
@@ -722,6 +782,42 @@ export default function TimesheetPage() {
             )}
           </section>
         </div>
+
+        {!loading && (byMonth.length > 0 || byUser.length > 0) && (
+          <div className="ts-stats">
+            {byMonth.length > 0 && (
+              <StatCard
+                title="Par mois"
+                subtitle={viewedName ? `Heures de ${viewedName}` : ""}
+                column="Mois"
+                rows={byMonth}
+                label={formatMonthLabel}
+                tick={formatMonthShort}
+                halves
+              />
+            )}
+            {byYear.length > 1 && (
+              <StatCard
+                title="Par année"
+                subtitle={viewedName ? `Heures de ${viewedName}` : ""}
+                column="Année"
+                rows={byYear}
+                label={yearLabel}
+                halves
+              />
+            )}
+            {byUser.length > 0 && (
+              <StatCard
+                title="Par personne"
+                subtitle={`Période : ${periodLabel}`}
+                column="Nom"
+                rows={byUser}
+                label={userName}
+                horizontal
+              />
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

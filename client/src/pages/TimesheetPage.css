@@ -363,6 +363,57 @@
   background: rgba(181, 68, 58, 0.14);
 }
 
+/* ── Statistiques (bas de page) ───────────────────────────────────────── */
+
+.ts-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.ts-stat-table td:first-child {
+  text-transform: capitalize;
+}
+
+/* Séries des graphiques (validées daltonisme, clair et sombre). */
+:root {
+  --ts-series-morning: #1e8f72;
+  --ts-series-afternoon: #eb6834;
+}
+
+html.dark-theme {
+  --ts-series-morning: #2fa784;
+  --ts-series-afternoon: #d95926;
+}
+
+.ts-stat-total {
+  color: var(--app-ink);
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ts-chart {
+  position: relative;
+  margin: 4px 14px 0;
+}
+
+.ts-stat-details {
+  margin: 8px 14px 12px;
+}
+
+.ts-stat-details summary {
+  width: fit-content;
+  color: var(--app-accent);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ts-stat-details .ts-table-wrap {
+  padding: 8px 0 0;
+}
+
 /* ── Mobile : formulaire puis cartes ──────────────────────────────────── */
 
 @media (max-width: 900px) {
@@ -446,5 +497,15 @@
 
   .ts-table tfoot td {
     border: 0;
+  }
+
+  .ts-stat-table tfoot tr {
+    flex-wrap: wrap;
+    gap: 2px 12px;
+    justify-content: flex-start;
+  }
+
+  .ts-stats {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
