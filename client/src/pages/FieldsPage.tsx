@@ -194,7 +194,7 @@ export default function FieldsPage() {
     });
   }, [selectedCrop, selectedFieldIds]);
 
-  usePageMeta("Fields", "/assets/icons8-champ-32.png");
+  usePageMeta("Champs", "/assets/icons8-champ-32.png");
 
   useEffect(() => {
     fetch("/api/config", { credentials: "include" })
