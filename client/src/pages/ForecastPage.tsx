@@ -231,7 +231,7 @@ export default function ForecastPage() {
     {},
   );
 
-  usePageMeta("Forecast", "/assets/icons8-weather-forecast-32.png");
+  usePageMeta("Météo", "/assets/icons8-weather-forecast-32.png");
 
   useEffect(() => {
     fetch("/api/forecast", { credentials: "include" })

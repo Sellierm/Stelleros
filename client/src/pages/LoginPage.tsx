@@ -11,7 +11,7 @@ export default function LoginPage() {
   const { login, authenticated } = useAuth();
   const navigate = useNavigate();
 
-  usePageMeta("Login", "/assets/icons8-connexion-32.png");
+  usePageMeta("Connexion", "/assets/icons8-connexion-32.png");
 
   // Load Font Awesome (matches original <head> link)
   useEffect(() => {
@@ -25,7 +25,7 @@ export default function LoginPage() {
 
   // Already logged in → go to forecast
   if (authenticated) {
-    navigate("/forecast");
+    navigate("/meteo");
     return null;
   }
 
@@ -34,7 +34,7 @@ export default function LoginPage() {
     setError("");
     const result = await login(username, password);
     if (result.success) {
-      navigate("/forecast");
+      navigate("/meteo");
     } else {
       setError(result.message || "Wrong username/password combination");
       setUsername("");

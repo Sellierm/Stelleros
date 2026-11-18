@@ -227,7 +227,7 @@ environment. Do not use the obsolete schema in which
 
 ## Timesheet
 
-The **Pointage** page (`/timesheet`) records working hours: one day per user
+The **Pointage** page (`/pointage`) records working hours: one day per user
 and date, split into a morning and an afternoon (start, end, work done). Only
 the accounts listed in `TIMESHEET_USERS` (every account when unset) have a
 timesheet; each of them

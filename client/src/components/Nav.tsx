@@ -59,12 +59,12 @@ export default function Nav() {
 
   // Get current page name for the logo (matches original navname)
   const pageNames: Record<string, string> = {
-    "/forecast": "Forecast",
+    "/meteo": "Météo",
     "/sencrop": "Sencrop",
-    "/fields": "Fields",
+    "/champs": "Champs",
     "/gps": "Gps",
     "/phyto": "Phyto",
-    "/timesheet": "Pointage",
+    "/pointage": "Pointage",
   };
   const currentName = pageNames[location.pathname] || "Farm";
 
@@ -83,8 +83,8 @@ export default function Nav() {
       <nav id="main-nav">
         <ul className="nav_links">
           <li>
-            <NavLink className={linkClass} to="/forecast">
-              Forecast
+            <NavLink className={linkClass} to="/meteo">
+              Météo
             </NavLink>
           </li>
           <li>
@@ -93,8 +93,8 @@ export default function Nav() {
             </NavLink>
           </li>
           <li>
-            <NavLink className={linkClass} to="/fields">
-              Fields
+            <NavLink className={linkClass} to="/champs">
+              Champs
             </NavLink>
           </li>
           <li>
@@ -108,7 +108,7 @@ export default function Nav() {
             </NavLink>
           </li>
           <li>
-            <NavLink className={linkClass} to="/timesheet">
+            <NavLink className={linkClass} to="/pointage">
               Pointage
             </NavLink>
           </li>

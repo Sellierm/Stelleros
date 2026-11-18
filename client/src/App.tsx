@@ -12,7 +12,7 @@ import TimesheetPage from "./pages/TimesheetPage";
 
 export default function App() {
   const homePage = import.meta.env.DEV ? (
-    <Navigate to="/forecast" replace />
+    <Navigate to="/meteo" replace />
   ) : (
     <LoginPage />
   );
@@ -24,7 +24,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={homePage} />
             <Route
-              path="/forecast"
+              path="/meteo"
               element={
                 <ProtectedRoute>
                   <ForecastPage />
@@ -40,7 +40,7 @@ export default function App() {
               }
             />
             <Route
-              path="/fields"
+              path="/champs"
               element={
                 <ProtectedRoute>
                   <FieldsPage />
@@ -64,12 +64,25 @@ export default function App() {
               }
             />
             <Route
-              path="/timesheet"
+              path="/pointage"
               element={
                 <ProtectedRoute>
                   <TimesheetPage />
                 </ProtectedRoute>
               }
+            />
+            {/* Anciennes adresses (favoris) */}
+            <Route
+              path="/forecast"
+              element={<Navigate to="/meteo" replace />}
+            />
+            <Route
+              path="/fields"
+              element={<Navigate to="/champs" replace />}
+            />
+            <Route
+              path="/timesheet"
+              element={<Navigate to="/pointage" replace />}
             />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
